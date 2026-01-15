@@ -72,6 +72,8 @@ const logTurn = (sessionId: string, iteration: number, type: 'request' | 'respon
 export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
   const { prompt, session, onEvent, onSessionUpdate } = options;
   let aborted = false;
+  const MAX_STREAM_RETRIES = 3;
+  const RETRY_BASE_DELAY_MS = 500;
 
   // Token tracking (declare outside try block for catch access)
   let totalInputTokens = 0;
@@ -117,8 +119,42 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
   // Store last error body for error handling
   let lastErrorBody: string | null = null;
 
+  const sendSystemNotice = (text: string) => {
+    sendMessage('system', { subtype: 'notice', text });
+  };
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const isRetryableNetworkError = (error: unknown): boolean => {
+    if (!error) return false;
+    const err = error as any;
+    const message = String(err.message || '').toLowerCase();
+    const causeMessage = String(err.cause?.message || '').toLowerCase();
+    const code = err.cause?.code || err.code;
+    const status = err.status || err.statusCode;
+
+    if (code && ['UND_ERR_SOCKET', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ECONNABORTED', 'ENETRESET', 'ECONNREFUSED'].includes(code)) {
+      return true;
+    }
+    if (status && [408, 429, 500, 502, 503, 504].includes(Number(status))) {
+      return true;
+    }
+    if (message.includes('terminated') || message.includes('fetch failed')) {
+      return true;
+    }
+    if (message.includes('socket') || causeMessage.includes('other side closed')) {
+      return true;
+    }
+    return false;
+  };
+
   // Start the query in the background
   (async () => {
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let iterationCount = 0;
+    let sessionStartTime = Date.now();
+
     try {
       // Determine if model is from LLM provider (contains ::)
       const isLLMProviderModel = session.model?.includes('::');
@@ -410,7 +446,9 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       }
 
       // Track total usage across all iterations
-      const sessionStartTime = Date.now();
+      totalInputTokens = 0;
+      totalOutputTokens = 0;
+      sessionStartTime = Date.now();
 
       // Get initial tools (will be refreshed each iteration)
       let activeTools = getTools(guiSettings);
@@ -446,7 +484,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       }
 
       // Main agent loop
-      let iterationCount = 0;
+      iterationCount = 0;
       const MAX_ITERATIONS = 50;
       
       // Loop detection: track recent tool calls
@@ -496,115 +534,137 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
         };
         logTurn(session.id, iterationCount, 'request', requestPayload);
 
-        // Call OpenAI API - build params conditionally
-        const stream = await client.chat.completions.create({
-          model: modelName,
-          messages: messages as any[],
-          tools: activeTools as any[],
-          stream: true,
-          parallel_tool_calls: true,
-          stream_options: { include_usage: true },
-          // Only include temperature if specified (some models like GPT-5 don't support it)
-          ...(temperature !== undefined ? { temperature } : {})
-        });
+        const runStreamWithRetries = async () => {
+          let lastError: unknown;
 
-        let assistantMessage = '';
-        let toolCalls: any[] = [];
-        let currentToolCall: any = null;
-        let contentStarted = false;
-        
-        // OPTIMIZATION: Only track metadata, not all chunks (memory leak!)
-        let streamMetadata: { id?: string; model?: string; created?: number; finishReason?: string; usage?: any } = {};
+          for (let attempt = 0; attempt <= MAX_STREAM_RETRIES; attempt++) {
+            let assistantMessage = '';
+            let toolCalls: any[] = [];
+            let contentStarted = false;
+            let streamMetadata: { id?: string; model?: string; created?: number; finishReason?: string; usage?: any } = {};
 
-        // Process stream
-        for await (const chunk of stream) {
-          if (aborted) {
-            console.log('[OpenAI Runner] Stream aborted by user');
-            break;
-          }
-
-          // Track metadata from first/last chunks (lightweight)
-          if (!streamMetadata.id && chunk.id) {
-            streamMetadata.id = chunk.id;
-            streamMetadata.model = chunk.model;
-            streamMetadata.created = chunk.created;
-          }
-          if (chunk.choices?.[0]?.finish_reason) {
-            streamMetadata.finishReason = chunk.choices[0].finish_reason;
-          }
-          if (chunk.usage) {
-            streamMetadata.usage = chunk.usage;
-          }
-
-          const delta = chunk.choices[0]?.delta;
-          
-          if (!delta) continue;
-
-          // Text content
-          if (delta.content) {
-            // Send content_block_start on first chunk
-            if (!contentStarted) {
-              contentStarted = true;
-              sendMessage('stream_event', {
-                event: {
-                  type: 'content_block_start',
-                  content_block: {
-                    type: 'text',
-                    text: ''
-                  },
-                  index: 0
-                }
+            try {
+              const stream = await client.chat.completions.create({
+                model: modelName,
+                messages: messages as any[],
+                tools: activeTools as any[],
+                stream: true,
+                parallel_tool_calls: true,
+                stream_options: { include_usage: true },
+                ...(temperature !== undefined ? { temperature } : {})
               });
-            }
 
-            assistantMessage += delta.content;
-            
-            // Send streaming text
-            sendMessage('stream_event', {
-              event: {
-                type: 'content_block_delta',
-                delta: {
-                  type: 'text_delta',
-                  text: delta.content
-                },
-                index: 0
-              }
-            });
-          }
+              for await (const chunk of stream) {
+                if (aborted) {
+                  console.log('[OpenAI Runner] Stream aborted by user');
+                  break;
+                }
 
-          // Tool calls
-          if (delta.tool_calls) {
-            for (const toolCall of delta.tool_calls) {
-              if (toolCall.index !== undefined) {
-                if (!toolCalls[toolCall.index]) {
-                  toolCalls[toolCall.index] = {
-                    id: toolCall.id || `call_${Date.now()}_${toolCall.index}`,
-                    type: 'function',
-                    function: {
-                      name: toolCall.function?.name || '',
-                      arguments: toolCall.function?.arguments || ''
+                if (!streamMetadata.id && chunk.id) {
+                  streamMetadata.id = chunk.id;
+                  streamMetadata.model = chunk.model;
+                  streamMetadata.created = chunk.created;
+                }
+                if (chunk.choices?.[0]?.finish_reason) {
+                  streamMetadata.finishReason = chunk.choices[0].finish_reason;
+                }
+                if (chunk.usage) {
+                  streamMetadata.usage = chunk.usage;
+                }
+
+                const delta = chunk.choices[0]?.delta;
+                if (!delta) continue;
+
+                if (delta.content) {
+                  if (!contentStarted) {
+                    contentStarted = true;
+                    sendMessage('stream_event', {
+                      event: {
+                        type: 'content_block_start',
+                        content_block: {
+                          type: 'text',
+                          text: ''
+                        },
+                        index: 0
+                      }
+                    });
+                  }
+
+                  assistantMessage += delta.content;
+                  sendMessage('stream_event', {
+                    event: {
+                      type: 'content_block_delta',
+                      delta: {
+                        type: 'text_delta',
+                        text: delta.content
+                      },
+                      index: 0
                     }
-                  };
-                } else {
-                  if (toolCall.function?.arguments) {
-                    toolCalls[toolCall.index].function.arguments += toolCall.function.arguments;
+                  });
+                }
+
+                if (delta.tool_calls) {
+                  for (const toolCall of delta.tool_calls) {
+                    if (toolCall.index !== undefined) {
+                      if (!toolCalls[toolCall.index]) {
+                        toolCalls[toolCall.index] = {
+                          id: toolCall.id || `call_${Date.now()}_${toolCall.index}`,
+                          type: 'function',
+                          function: {
+                            name: toolCall.function?.name || '',
+                            arguments: toolCall.function?.arguments || ''
+                          }
+                        };
+                      } else if (toolCall.function?.arguments) {
+                        toolCalls[toolCall.index].function.arguments += toolCall.function.arguments;
+                      }
+                    }
                   }
                 }
               }
+
+              if (contentStarted) {
+                sendMessage('stream_event', {
+                  event: {
+                    type: 'content_block_stop',
+                    index: 0
+                  }
+                });
+              }
+
+              return { assistantMessage, toolCalls, streamMetadata };
+            } catch (error) {
+              lastError = error;
+              const retryable = isRetryableNetworkError(error);
+
+              if (contentStarted) {
+                sendMessage('stream_event', {
+                  event: {
+                    type: 'content_block_stop',
+                    index: 0
+                  }
+                });
+              }
+
+              if (aborted || !retryable || attempt === MAX_STREAM_RETRIES) {
+                const finalError = error instanceof Error ? error : new Error(String(error));
+                (finalError as any).retryable = retryable;
+                (finalError as any).retryAttempts = Math.min(attempt, MAX_STREAM_RETRIES);
+                throw finalError;
+              }
+
+              const delayMs = RETRY_BASE_DELAY_MS * 2 ** attempt;
+              sendSystemNotice(`Network error detected. Retrying (${attempt + 1}/${MAX_STREAM_RETRIES})...`);
+              console.warn(`[OpenAI Runner] Stream error, retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_STREAM_RETRIES})`, error);
+              await sleep(delayMs);
             }
           }
-        }
 
-        // Send content_block_stop if content was streamed
-        if (contentStarted) {
-          sendMessage('stream_event', {
-            event: {
-              type: 'content_block_stop',
-              index: 0
-            }
-          });
-        }
-        
+          throw lastError ?? new Error('Unknown stream error');
+        };
+
+        const { assistantMessage, toolCalls, streamMetadata } = await runStreamWithRetries();
+
         // Check if aborted during stream
         if (aborted) {
           console.log('[OpenAI Runner] Session aborted during streaming');
@@ -621,6 +681,17 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           });
           return;
         }
+=======
+          throw lastError ?? new Error('Unknown stream error');
+        };
+
+        const { assistantMessage, toolCalls, rawJsonResponse } = await runStreamWithRetries();
+        
+        // Log unified raw JSON response
+        console.log('[OpenAI Runner] ===== RAW JSON RESPONSE =====');
+        console.log(JSON.stringify(rawJsonResponse, null, 2));
+        console.log('[OpenAI Runner] ===== END RAW JSON RESPONSE =====');
+>>>>>>> c3ae68c (fix: add retry handling for dropped streams)
         
         // Accumulate token usage
         if (streamMetadata.usage) {
@@ -990,7 +1061,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           });
           return;
         }
-        
+
         // Add all tool results to messages
         messages.push(...toolResults);
         
@@ -1035,6 +1106,28 @@ DO NOT call the same tool again with similar arguments.`
 
     } catch (error: any) {
       console.error('[OpenAI Runner] Error:', error);
+
+      const retryable = Boolean((error as any)?.retryable);
+      const retryAttempts = (error as any)?.retryAttempts ?? 0;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      sendMessage('result', {
+        subtype: 'error',
+        is_error: true,
+        duration_ms: Date.now() - sessionStartTime,
+        duration_api_ms: Date.now() - sessionStartTime,
+        num_turns: iterationCount,
+        result: errorMessage,
+        session_id: session.id,
+        total_cost_usd: 0,
+        usage: {
+          input_tokens: totalInputTokens,
+          output_tokens: totalOutputTokens
+        },
+        retryable: retryable,
+        retryPrompt: prompt,
+        retryAttempts: retryAttempts
+      });
       
       // Extract detailed error message from API response
       let errorMessage = String(error);

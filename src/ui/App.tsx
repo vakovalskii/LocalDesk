@@ -272,6 +272,37 @@ function App() {
     });
   }, [activeSessionId, sendEvent]);
 
+  const handleRetry = useCallback((retryPrompt?: string) => {
+    if (!activeSessionId) return;
+    if (isRunning) {
+      setGlobalError("Session is still running. Please wait for it to finish.");
+      return;
+    }
+
+    const lastPrompt = retryPrompt || (() => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i] as any;
+        if (msg?.type === "user_prompt") return msg.prompt as string;
+      }
+      return "";
+    })();
+
+    if (!lastPrompt) {
+      setGlobalError("No prompt available to retry.");
+      return;
+    }
+
+    sendEvent({
+      type: "session.continue",
+      payload: {
+        sessionId: activeSessionId,
+        prompt: lastPrompt,
+        retry: true,
+        retryReason: "manual"
+      }
+    });
+  }, [activeSessionId, isRunning, messages, sendEvent, setGlobalError]);
+
   const handleSaveSettings = useCallback((settings: ApiSettings) => {
     sendEvent({ type: "settings.save", payload: { settings } });
     setApiSettings(settings);
@@ -428,6 +459,11 @@ function App() {
                   permissionRequest={permissionRequests[0]}
                   onPermissionResult={handlePermissionResult}
                   onEditMessage={handleEditMessage}
+                  fileChanges={activeSession?.fileChanges}
+                  sessionId={activeSessionId || undefined}
+                  onConfirmChanges={handleConfirmChanges}
+                  onRollbackChanges={handleRollbackChanges}
+                  onRetry={handleRetry}
                   fileChanges={activeSession?.fileChanges}
                   sessionId={activeSessionId || undefined}
                   onConfirmChanges={handleConfirmChanges}

@@ -353,10 +353,27 @@ const AskUserQuestionCard = ({
 };
 
 const SystemInfoCard = ({ message, showIndicator = false }: { message: SDKMessage; showIndicator?: boolean }) => {
-  if (message.type !== "system" || !("subtype" in message) || message.subtype !== "init") return null;
-  
+  if (message.type !== "system" || !("subtype" in message)) return null;
+
   const systemMsg = message as any;
-  
+
+  if (systemMsg.subtype === "notice") {
+    const noticeText = systemMsg.text || systemMsg.message || "System notice";
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="header text-accent flex items-center gap-2">
+          <StatusDot variant="success" isActive={showIndicator} isVisible={showIndicator} />
+          System Notice
+        </div>
+        <div className="rounded-xl px-4 py-2 border border-ink-900/10 bg-surface-secondary text-sm text-ink-700">
+          {noticeText}
+        </div>
+      </div>
+    );
+  }
+
+  if (systemMsg.subtype !== "init") return null;
+
   const InfoItem = ({ name, value }: { name: string; value: string }) => (
     <div className="text-[14px]">
       <span className="mr-4 font-normal">{name}</span>
@@ -484,7 +501,8 @@ export function MessageCard({
   permissionRequest,
   onPermissionResult,
   onEditMessage,
-  messageIndex,
+  onRetry,
+  messageIndex
   fileChanges,
   sessionId,
   onConfirmChanges,
@@ -496,6 +514,7 @@ export function MessageCard({
   permissionRequest?: PermissionRequest;
   onPermissionResult?: (toolUseId: string, result: PermissionResult) => void;
   onEditMessage?: (messageIndex: number, newPrompt: string) => void;
+  onRetry?: (prompt?: string) => void;
   messageIndex?: number;
   fileChanges?: FileChange[];
   sessionId?: string;
@@ -525,11 +544,27 @@ export function MessageCard({
     if (sdkMessage.subtype === "success") {
       return <SessionResult message={sdkMessage} fileChanges={fileChanges} sessionId={sessionId} onConfirmChanges={onConfirmChanges} onRollbackChanges={onRollbackChanges} />;
     }
+    const retryable = Boolean((sdkMessage as any).retryable);
+    const retryPrompt = (sdkMessage as any).retryPrompt || (sdkMessage as any).retry_prompt;
+    const retryAttempts = (sdkMessage as any).retryAttempts;
+    const canRetry = Boolean(onRetry && retryable && !isRunning);
     return (
       <div className="flex flex-col gap-2 mt-4">
         <div className="header text-error">Session Error</div>
         <div className="rounded-xl bg-error-light p-3">
           <pre className="text-sm text-error whitespace-pre-wrap">{JSON.stringify(sdkMessage, null, 2)}</pre>
+          {retryAttempts ? (
+            <div className="mt-2 text-xs text-error/80">Auto-retry failed after {retryAttempts} attempt{retryAttempts === 1 ? '' : 's'}.</div>
+          ) : null}
+          {canRetry ? (
+            <button
+              className="mt-3 inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => onRetry?.(retryPrompt)}
+              disabled={!canRetry}
+            >
+              Retry
+            </button>
+          ) : null}
         </div>
       </div>
     );

@@ -381,17 +381,33 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
         });
     }
 
+    const isSamePrompt = session.lastPrompt === event.payload.prompt;
     sessions.updateSession(session.id, { status: "running", lastPrompt: event.payload.prompt });
     sessionManager.emitToWindow(windowId, {
       type: "session.status",
       payload: { sessionId: session.id, status: "running", title: sessionTitle, cwd: session.cwd, model: session.model }
     });
 
-    // Use emit() to save user_prompt to DB AND send to UI
-    emit({
-      type: "stream.user_prompt",
-      payload: { sessionId: session.id, prompt: event.payload.prompt }
-    });
+    if (event.payload.retry) {
+      emit({
+        type: "stream.message",
+        payload: {
+          sessionId: session.id,
+          message: {
+            type: "system",
+            subtype: "notice",
+            text: "Retrying the last request..."
+          } as any
+        }
+      });
+    }
+
+    if (!isSamePrompt) {
+      emit({
+        type: "stream.user_prompt",
+        payload: { sessionId: session.id, prompt: event.payload.prompt }
+      });
+    }
 
     runClaude({
       prompt: event.payload.prompt,
