@@ -75,6 +75,20 @@ export function handleClientEvent(event: ClientEvent) {
       prompt: event.payload.prompt
     });
 
+    // If prompt is empty, just create session without running AI
+    if (!event.payload.prompt || event.payload.prompt.trim() === '') {
+      sessions.updateSession(session.id, {
+        status: "idle",
+        lastPrompt: ""
+      });
+      emit({
+        type: "session.status",
+        payload: { sessionId: session.id, status: "idle", title: session.title, cwd: session.cwd }
+      });
+      return;
+    }
+
+    // Normal flow with prompt
     sessions.updateSession(session.id, {
       status: "running",
       lastPrompt: event.payload.prompt
@@ -129,13 +143,8 @@ export function handleClientEvent(event: ClientEvent) {
       return;
     }
 
-    if (!session.claudeSessionId) {
-      emit({
-        type: "runner.error",
-        payload: { sessionId: session.id, message: "Session has no resume id yet." }
-      });
-      return;
-    }
+    // If session has no claudeSessionId yet (was created empty), treat this as first run
+    const isFirstRun = !session.claudeSessionId;
 
     sessions.updateSession(session.id, { status: "running", lastPrompt: event.payload.prompt });
     emit({
@@ -151,7 +160,7 @@ export function handleClientEvent(event: ClientEvent) {
     runClaude({
       prompt: event.payload.prompt,
       session,
-      resumeSessionId: session.claudeSessionId,
+      resumeSessionId: isFirstRun ? undefined : session.claudeSessionId,
       onEvent: emit,
       onSessionUpdate: (updates) => {
         sessions.updateSession(session.id, updates);
@@ -220,6 +229,19 @@ export function handleClientEvent(event: ClientEvent) {
       type: "session.list",
       payload: { sessions: sessions.listSessions() }
     });
+    return;
+  }
+
+  if (event.type === "session.update-cwd") {
+    const { sessionId, cwd } = event.payload;
+    sessions.updateSession(sessionId, { cwd });
+    const session = sessions.getSession(sessionId);
+    if (session) {
+      emit({
+        type: "session.status",
+        payload: { sessionId: session.id, status: session.status, title: session.title, cwd: session.cwd }
+      });
+    }
     return;
   }
 

@@ -126,10 +126,11 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       });
 
       // Initialize tool executor with API settings for web tools
-      const toolExecutor = new ToolExecutor(session.cwd || DEFAULT_CWD, guiSettings);
+      // If no cwd, pass empty string to enable "no workspace" mode
+      const toolExecutor = new ToolExecutor(session.cwd || '', guiSettings);
 
       // Build conversation history from session
-      const currentCwd = session.cwd || DEFAULT_CWD;
+      const currentCwd = session.cwd || 'No workspace folder';
       
       // Function to load memory
       const loadMemory = async (): Promise<string | undefined> => {
@@ -287,7 +288,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       // Send system init message
       sendMessage('system', {
         subtype: 'init',
-        cwd: session.cwd || DEFAULT_CWD,
+        cwd: session.cwd || 'No workspace folder',
         session_id: session.id,
         tools: activeTools.map(t => t.function.name),
         model: guiSettings.model,
@@ -345,7 +346,10 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
 
         // Process stream
         for await (const chunk of stream) {
-          if (aborted) break;
+          if (aborted) {
+            console.log('[OpenAI Runner] Stream aborted by user');
+            break;
+          }
 
           // Collect full chunk for logging
           fullStreamResponse.push(chunk);
@@ -446,6 +450,16 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           system_fingerprint: firstChunk.system_fingerprint || null
         };
         
+        // Check if aborted during stream
+        if (aborted) {
+          console.log('[OpenAI Runner] Session aborted during streaming');
+          onEvent({
+            type: "session.status",
+            payload: { sessionId: session.id, status: "idle", title: session.title }
+          });
+          return;
+        }
+        
         // Log unified raw JSON response
         console.log('[OpenAI Runner] ===== RAW JSON RESPONSE =====');
         console.log(JSON.stringify(rawJsonResponse, null, 2));
@@ -543,7 +557,10 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
         const toolResults: ChatMessage[] = [];
 
         for (const toolCall of toolCalls) {
-          if (aborted) break;
+          if (aborted) {
+            console.log('[OpenAI Runner] Tool execution aborted by user');
+            break;
+          }
 
           const toolName = toolCall.function.name;
           const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
@@ -560,10 +577,30 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
             // Send permission request and wait for user approval
             sendPermissionRequest(toolUseId, toolName, toolArgs, toolArgs.explanation);
             
-            // Wait for permission result from UI
+            // Wait for permission result from UI with abort check
             const approved = await new Promise<boolean>((resolve) => {
               pendingPermissions.set(toolUseId, { resolve });
+              
+              // Check abort periodically
+              const checkAbort = setInterval(() => {
+                if (aborted) {
+                  clearInterval(checkAbort);
+                  pendingPermissions.delete(toolUseId);
+                  resolve(false);
+                }
+              }, 100);
+              
+              // Clean up interval when resolved
+              pendingPermissions.get(toolUseId)!.resolve = (approved: boolean) => {
+                clearInterval(checkAbort);
+                resolve(approved);
+              };
             });
+            
+            if (aborted) {
+              console.log(`[OpenAI Runner] Tool execution aborted while waiting for permission: ${toolName}`);
+              break;
+            }
             
             if (!approved) {
               console.log(`[OpenAI Runner] Tool execution denied by user: ${toolName}`);
@@ -621,6 +658,16 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           });
         }
 
+        // Check if aborted during tool execution
+        if (aborted) {
+          console.log('[OpenAI Runner] Session aborted during tool execution');
+          onEvent({
+            type: "session.status",
+            payload: { sessionId: session.id, status: "idle", title: session.title }
+          });
+          return;
+        }
+        
         // Add all tool results to messages
         messages.push(...toolResults);
         

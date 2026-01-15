@@ -24,13 +24,23 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
   const isRunning = activeSession?.status === "running";
 
   const handleSend = useCallback(async () => {
-    if (!prompt.trim()) return;
+    const trimmedPrompt = prompt.trim();
+    
+    // For existing sessions, require a prompt
+    if (activeSessionId && !trimmedPrompt) return;
 
     if (!activeSessionId) {
+      // Starting new session - can be empty for chat-only mode
       let title = "";
       try {
         setPendingStart(true);
-        title = await window.electron.generateSessionTitle(prompt);
+        // Generate title from prompt, or use default for empty sessions
+        if (trimmedPrompt) {
+          title = await window.electron.generateSessionTitle(trimmedPrompt);
+        } else {
+          // Empty session - just chatting
+          title = "New Chat";
+        }
       } catch (error) {
         console.error(error);
         setPendingStart(false);
@@ -39,14 +49,19 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
       }
       sendEvent({
         type: "session.start",
-        payload: { title, prompt, cwd: cwd.trim() || undefined, allowedTools: DEFAULT_ALLOWED_TOOLS }
+        payload: { 
+          title, 
+          prompt: trimmedPrompt, // Can be empty string
+          cwd: cwd.trim() || undefined, 
+          allowedTools: DEFAULT_ALLOWED_TOOLS 
+        }
       });
     } else {
       if (activeSession?.status === "running") {
         setGlobalError("Session is still running. Please wait for it to finish.");
         return;
       }
-      sendEvent({ type: "session.continue", payload: { sessionId: activeSessionId, prompt } });
+      sendEvent({ type: "session.continue", payload: { sessionId: activeSessionId, prompt: trimmedPrompt } });
     }
     setPrompt("");
   }, [activeSession, activeSessionId, cwd, prompt, sendEvent, setGlobalError, setPendingStart, setPrompt]);
@@ -57,12 +72,10 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
   }, [activeSessionId, sendEvent]);
 
   const handleStartFromModal = useCallback(() => {
-    if (!cwd.trim()) {
-      setGlobalError("Working Directory is required to start a session.");
-      return;
-    }
+    // Allow starting chat without cwd or prompt
+    // If no cwd, file operations will be blocked by tools-executor
     handleSend();
-  }, [cwd, handleSend, setGlobalError]);
+  }, [handleSend]);
 
   return { prompt, setPrompt, isRunning, handleSend, handleStop, handleStartFromModal };
 }

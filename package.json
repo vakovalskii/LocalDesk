@@ -38,7 +38,7 @@
 		"lint": "eslint .",
 		"preview": "vite preview",
 		"transpile:electron": "tsc --project src/electron/tsconfig.json && npm run copy:prompts",
-		"copy:prompts": "mkdir -p dist-electron/libs/prompts && cp src/electron/libs/prompts/*.txt dist-electron/libs/prompts/",
+		"copy:prompts": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('dist-electron/libs/prompts',{recursive:true});fs.readdirSync('src/electron/libs/prompts').filter(f=>f.endsWith('.txt')).forEach(f=>fs.copyFileSync(path.join('src/electron/libs/prompts',f),path.join('dist-electron/libs/prompts',f)))\"",
 		"dist:mac": "npm run transpile:electron && npm run build && electron-builder --mac --arm64",
 		"dist:win": "npm run transpile:electron && npm run build && electron-builder --win --x64",
 		"dist:linux": "npm run transpile:electron && npm run build && electron-builder --linux --x64"
@@ -48,12 +48,14 @@
 		"@radix-ui/react-dialog": "^1.1.15",
 		"@radix-ui/react-dropdown-menu": "^2.1.16",
 		"@tailwindcss/vite": "^4.1.18",
+		"@tavily/core": "^0.7.1",
 		"better-sqlite3": "^12.6.0",
 		"dotenv": "^17.2.3",
 		"highlight.js": "^11.11.1",
 		"node-fetch": "^3.3.2",
 		"openai": "^6.16.0",
 		"os-utils": "^0.0.14",
+		"pdf-parse": "^1.1.1",
 		"react": "^19.2.3",
 		"react-dom": "^19.2.3",
 		"react-markdown": "^10.1.0",
@@ -62,6 +64,7 @@
 		"remark-gfm": "^4.0.1",
 		"tailwindcss": "^4.1.18",
 		"vite-tsconfig-paths": "^6.0.3",
+		"vm2": "^3.10.1",
 		"zustand": "^5.0.10"
 	},
 	"devDependencies": {

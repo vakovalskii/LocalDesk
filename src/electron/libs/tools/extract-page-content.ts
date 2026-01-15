@@ -2,7 +2,7 @@
  * ExtractPageContentTool - Extract full content from web pages using Tavily API
  */
 
-import fetch from 'node-fetch';
+import { tavily } from '@tavily/core';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
 
 export interface ExtractPageParams {
@@ -16,17 +16,6 @@ export interface PageContent {
   char_count: number;
   success: boolean;
   error?: string;
-}
-
-export interface TavilyExtractResponse {
-  results: Array<{
-    url: string;
-    raw_content: string;
-  }>;
-  failed_results: Array<{
-    url: string;
-    error: string;
-  }>;
 }
 
 export const ExtractPageContentToolDefinition: ToolDefinition = {
@@ -57,11 +46,13 @@ export const ExtractPageContentToolDefinition: ToolDefinition = {
 };
 
 export class ExtractPageContentTool {
-  private apiKey: string;
-  private baseUrl = 'https://api.tavily.com';
+  private tvly: any;
 
   constructor(apiKey: string) {
-    this.apiKey = apiKey;
+    if (!apiKey || apiKey === 'dummy-key') {
+      throw new Error('Tavily API key not configured. Please set it in Settings.');
+    }
+    this.tvly = tavily({ apiKey });
   }
 
   async extract(params: ExtractPageParams): Promise<PageContent[]> {
@@ -69,47 +60,27 @@ export class ExtractPageContentTool {
 
     console.log(`[ExtractPage] Extracting ${urls.length} URLs`);
 
-    if (!this.apiKey || this.apiKey === 'dummy-key') {
-      throw new Error('Tavily API key not configured. Please set it in Settings.');
-    }
-
     if (urls.length === 0 || urls.length > 5) {
       throw new Error('Must provide 1-5 URLs to extract');
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/extract`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          api_key: this.apiKey,
-          urls,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Tavily API error: ${response.status} - ${errorText}`);
-      }
-
-      const data = await response.json() as TavilyExtractResponse;
+      const response = await this.tvly.extract(urls);
 
       const results: PageContent[] = [];
 
       // Add successful extractions
-      data.results?.forEach((result) => {
+      response.results?.forEach((result: any) => {
         results.push({
           url: result.url,
-          content: result.raw_content,
-          char_count: result.raw_content.length,
+          content: result.rawContent,
+          char_count: result.rawContent.length,
           success: true,
         });
       });
 
       // Add failed extractions
-      data.failed_results?.forEach((failed) => {
+      response.failedResults?.forEach((failed: any) => {
         results.push({
           url: failed.url,
           content: '',

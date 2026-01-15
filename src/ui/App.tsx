@@ -19,6 +19,7 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [apiSettings, setApiSettings] = useState<ApiSettings | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings have been loaded from backend
   const autoScrollRef = useRef(true); // Use ref for immediate access
   const partialUpdateScheduledRef = useRef(false);
 
@@ -96,6 +97,7 @@ function App() {
     // Handle settings loaded event
     if (event.type === "settings.loaded") {
       setApiSettings(event.payload.settings);
+      setSettingsLoaded(true);
     }
   }, [handleServerEvent, handlePartialMessages]);
 
@@ -113,6 +115,34 @@ function App() {
       sendEvent({ type: "settings.get" });
     }
   }, [connected, sendEvent]);
+
+  // Check if API key is configured on first load
+  useEffect(() => {
+    // Wait until settings are loaded from backend
+    if (!settingsLoaded) return;
+    
+    // Check if settings are null (file doesn't exist or empty)
+    if (apiSettings === null) {
+      console.log('[App] Settings are null (file empty or missing), opening Settings modal');
+      setShowStartModal(false);
+      setShowSettingsModal(true);
+      return;
+    }
+    
+    // Settings exist - check if API key is valid
+    const hasValidApiKey = apiSettings.apiKey && 
+                          apiSettings.apiKey.trim() !== '' && 
+                          apiSettings.apiKey !== 'null' &&
+                          apiSettings.apiKey !== 'undefined';
+    
+    if (!hasValidApiKey) {
+      console.log('[App] No valid API key found, opening Settings modal');
+      setShowStartModal(false);
+      setShowSettingsModal(true);
+    } else {
+      console.log('[App] Valid API key found, ready to use');
+    }
+  }, [apiSettings, settingsLoaded, setShowStartModal]);
 
   useEffect(() => {
     if (!activeSessionId || !connected) return;
@@ -267,6 +297,24 @@ function App() {
           </div>
           <span className="text-sm font-medium text-ink-700">{activeSession?.title || "Agent Cowork"}</span>
           <div className="flex items-center gap-2">
+            {!activeSession?.cwd && activeSessionId && (
+              <button
+                onClick={async () => {
+                  const result = await window.electron.selectDirectory();
+                  if (result && activeSessionId) {
+                    sendEvent({ type: "session.update-cwd", payload: { sessionId: activeSessionId, cwd: result } });
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-accent/10 border border-accent/30 text-accent rounded-lg hover:bg-accent/20 transition-colors"
+                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                title="Set workspace folder to enable file operations"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                Set Workspace Folder
+              </button>
+            )}
             {activeSession?.cwd && (
               <div className="flex items-center gap-1">
                 <button

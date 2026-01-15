@@ -60,6 +60,7 @@ export type ClientEvent =
   | { type: "session.stop"; payload: { sessionId: string } }
   | { type: "session.delete"; payload: { sessionId: string } }
   | { type: "session.pin"; payload: { sessionId: string; isPinned: boolean } }
+  | { type: "session.update-cwd"; payload: { sessionId: string; cwd: string } }
   | { type: "session.list" }
   | { type: "session.history"; payload: { sessionId: string } }
   | { type: "permission.response"; payload: { sessionId: string; toolUseId: string; result: PermissionResult } }

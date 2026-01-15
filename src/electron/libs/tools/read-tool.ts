@@ -32,6 +32,17 @@ export async function executeReadTool(
   args: { file_path: string; explanation: string },
   context: ToolExecutionContext
 ): Promise<ToolResult> {
+  // Check for PDF files - they should use ExecuteJS with pdf-parse
+  if (args.file_path.toLowerCase().endsWith('.pdf')) {
+    return {
+      success: false,
+      error: `❌ Cannot read PDF files with Read tool (will return binary garbage).\n\n` +
+             `Use ExecuteJS instead:\n` +
+             `1. InstallPackage(['pdf-parse'])\n` +
+             `2. ExecuteJS: const pdf = require('pdf-parse'); const buffer = require('fs').readFileSync('${args.file_path}'); return pdf(buffer);`
+    };
+  }
+
   // Security check
   if (!context.isPathSafe(args.file_path)) {
     return {

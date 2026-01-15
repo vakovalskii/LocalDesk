@@ -2,7 +2,8 @@
  * Tool executors - actual implementation of each tool
  */
 
-import { resolve, relative, isAbsolute } from 'path';
+import { resolve, relative, isAbsolute, normalize, sep } from 'path';
+import { realpathSync, existsSync } from 'fs';
 import type { ToolResult, ToolExecutionContext } from './tools/base-tool.js';
 import type { ApiSettings } from '../types.js';
 
@@ -16,6 +17,8 @@ import { executeGrepTool } from './tools/grep-tool.js';
 import { WebSearchTool } from './tools/web-search.js';
 import { ExtractPageContentTool } from './tools/extract-page-content.js';
 import { executeMemoryTool } from './tools/memory-tool.js';
+import { executeJSTool } from './tools/execute-js-tool.js';
+import { installPackageTool } from './tools/install-package-tool.js';
 
 export { ToolResult };
 
@@ -26,7 +29,9 @@ export class ToolExecutor {
   private extractPageTool: ExtractPageContentTool | null = null;
 
   constructor(cwd: string, apiSettings: ApiSettings | null = null) {
-    this.cwd = resolve(cwd); // Normalize path
+    // Normalize and resolve the working directory to absolute path
+    // If cwd is empty or undefined, keep it empty (no workspace mode)
+    this.cwd = cwd && cwd.trim() ? normalize(resolve(cwd)) : '';
     this.apiSettings = apiSettings;
     
     // Initialize web tools if Tavily API key is available
@@ -36,19 +41,48 @@ export class ToolExecutor {
     }
   }
 
-  // Security: Check if path is within allowed directory
+  // Security: Check if path is within allowed directory (enhanced protection)
   private isPathSafe(filePath: string): boolean {
-    const absolutePath = resolve(this.cwd, filePath);
-    const relativePath = relative(this.cwd, absolutePath);
-    
-    // Path is safe if it doesn't start with '..' (doesn't go up from cwd)
-    const isSafe = !relativePath.startsWith('..') && !isAbsolute(relativePath);
-    
-    if (!isSafe) {
-      console.warn(`[Security] Blocked access to path outside working directory: ${filePath}`);
+    try {
+      // Normalize input path to prevent path traversal tricks
+      const normalizedInput = normalize(filePath);
+      
+      // Resolve to absolute path relative to cwd
+      const absolutePath = resolve(this.cwd, normalizedInput);
+      
+      // If path exists, get real path (resolves symlinks)
+      // This prevents symlink attacks
+      let realPath = absolutePath;
+      if (existsSync(absolutePath)) {
+        try {
+          realPath = realpathSync(absolutePath);
+        } catch {
+          // If realpath fails, use absolute path
+          realPath = absolutePath;
+        }
+      }
+      
+      // Normalize the real path
+      const normalizedRealPath = normalize(realPath);
+      const normalizedCwd = normalize(this.cwd);
+      
+      // Check if the path is within cwd using string comparison
+      // Add separator to prevent partial matches (e.g., /app vs /app-data)
+      const cwdWithSep = normalizedCwd.endsWith(sep) ? normalizedCwd : normalizedCwd + sep;
+      const isInside = normalizedRealPath === normalizedCwd || normalizedRealPath.startsWith(cwdWithSep);
+      
+      if (!isInside) {
+        console.warn(`[Security] Blocked access to path outside working directory:`);
+        console.warn(`  Requested: ${filePath}`);
+        console.warn(`  Resolved: ${normalizedRealPath}`);
+        console.warn(`  Working dir: ${normalizedCwd}`);
+      }
+      
+      return isInside;
+    } catch (error) {
+      console.error(`[Security] Error checking path safety: ${error}`);
+      return false;
     }
-    
-    return isSafe;
   }
 
   private getContext(): ToolExecutionContext {
@@ -62,6 +96,22 @@ export class ToolExecutor {
     console.log(`[Tool Executor] Executing ${toolName}`, args);
 
     const context = this.getContext();
+
+    // Check if cwd is valid for file operations
+    const fileOperationTools = ['Write', 'Edit', 'Bash', 'Read', 'ExecuteJS', 'InstallPackage'];
+    if (fileOperationTools.includes(toolName)) {
+      if (!this.cwd || this.cwd === '.' || this.cwd === '') {
+        return {
+          success: false,
+          error: `❌ Cannot perform file operations without a workspace folder.\n\n` +
+                 `📁 To enable file access:\n` +
+                 `1. Click "+ New Chat" in the sidebar\n` +
+                 `2. Choose a workspace folder using the "Browse..." button\n` +
+                 `3. Start a new chat session\n\n` +
+                 `💬 You can continue chatting without file access, but I won't be able to read, write, or edit files.`
+        };
+      }
+    }
 
     try {
       switch (toolName) {
@@ -91,6 +141,12 @@ export class ToolExecutor {
         
         case 'Memory':
           return await executeMemoryTool(args as any, context);
+        
+        case 'ExecuteJS':
+          return await executeJSTool(args as any, context);
+        
+        case 'InstallPackage':
+          return await installPackageTool(args as any, context);
         
         default:
           return {

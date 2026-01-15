@@ -22,6 +22,12 @@ export * from './extract-page-content.js';
 // Memory tool
 export * from './memory-tool.js';
 
+// Execute JS tool
+export * from './execute-js-tool.js';
+
+// Install Package tool
+export * from './install-package-tool.js';
+
 // Tool definitions array
 import { BashToolDefinition } from './bash-tool.js';
 import { ReadToolDefinition } from './read-tool.js';
@@ -32,6 +38,8 @@ import { GrepToolDefinition } from './grep-tool.js';
 import { WebSearchToolDefinition } from './web-search.js';
 import { ExtractPageContentToolDefinition } from './extract-page-content.js';
 import { MemoryToolDefinition } from './memory-tool.js';
+import { ExecuteJSToolDefinition } from './execute-js-tool.js';
+import { InstallPackageToolDefinition } from './install-package-tool.js';
 
 export const ALL_TOOL_DEFINITIONS = [
   BashToolDefinition,
@@ -42,6 +50,8 @@ export const ALL_TOOL_DEFINITIONS = [
   GrepToolDefinition,
   WebSearchToolDefinition,
   ExtractPageContentToolDefinition,
-  MemoryToolDefinition
+  MemoryToolDefinition,
+  ExecuteJSToolDefinition,
+  InstallPackageToolDefinition
 ];
 

@@ -2,7 +2,7 @@
  * WebSearchTool - Search the web using Tavily API
  */
 
-import fetch from 'node-fetch';
+import { tavily } from '@tavily/core';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
 
 export interface WebSearchParams {
@@ -16,15 +16,6 @@ export interface SearchResult {
   url: string;
   snippet: string;
   score?: number;
-}
-
-export interface TavilySearchResponse {
-  results: Array<{
-    title: string;
-    url: string;
-    content: string;
-    score: number;
-  }>;
 }
 
 export const WebSearchToolDefinition: ToolDefinition = {
@@ -56,11 +47,13 @@ export const WebSearchToolDefinition: ToolDefinition = {
 };
 
 export class WebSearchTool {
-  private apiKey: string;
-  private baseUrl = 'https://api.tavily.com';
+  private tvly: any;
 
   constructor(apiKey: string) {
-    this.apiKey = apiKey;
+    if (!apiKey || apiKey === 'dummy-key') {
+      throw new Error('Tavily API key not configured. Please set it in Settings.');
+    }
+    this.tvly = tavily({ apiKey });
   }
 
   async search(params: WebSearchParams): Promise<SearchResult[]> {
@@ -68,33 +61,14 @@ export class WebSearchTool {
 
     console.log(`[WebSearch] Query: "${query}", max_results: ${max_results}`);
 
-    if (!this.apiKey || this.apiKey === 'dummy-key') {
-      throw new Error('Tavily API key not configured. Please set it in Settings.');
-    }
-
     try {
-      const response = await fetch(`${this.baseUrl}/search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          api_key: this.apiKey,
-          query,
-          max_results: Math.min(max_results, 10),
-          include_raw_content: false,
-          include_answer: false,
-        }),
+      const response = await this.tvly.search(query, {
+        maxResults: Math.min(max_results, 10),
+        includeRawContent: false,
+        includeAnswer: false,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Tavily API error: ${response.status} - ${errorText}`);
-      }
-
-      const data = await response.json() as TavilySearchResponse;
-
-      const results: SearchResult[] = data.results.map((result) => ({
+      const results: SearchResult[] = response.results.map((result: any) => ({
         title: result.title,
         url: result.url,
         snippet: result.content.substring(0, 200) + (result.content.length > 200 ? '...' : ''),

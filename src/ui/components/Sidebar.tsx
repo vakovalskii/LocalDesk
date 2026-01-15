@@ -74,7 +74,7 @@ export function Sidebar({
         className="w-full rounded-xl border border-ink-900/10 bg-surface px-4 py-2.5 text-sm font-medium text-ink-700 hover:bg-surface-tertiary hover:border-ink-900/20 transition-colors"
         onClick={onNewSession}
       >
-        + New Task
+        + New Chat
       </button>
       
       <button
@@ -106,7 +106,6 @@ export function Sidebar({
       
       {currentModel && (
         <div className="w-full rounded-lg border border-info/20 bg-info/5 px-3 py-2">
-          <div className="text-xs font-medium text-muted mb-1">Current Model:</div>
           <div className="flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5 text-info flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path d="M13 7H7v6h6V7z"/>
@@ -114,11 +113,6 @@ export function Sidebar({
             </svg>
             <span className="text-xs font-medium text-info truncate" title={currentModel}>{currentModel}</span>
           </div>
-        </div>
-      )}
-      {!currentModel && (
-        <div className="w-full rounded-lg border border-ink-900/10 bg-surface px-3 py-2">
-          <div className="text-xs text-muted text-center">Using default Claude settings</div>
         </div>
       )}
       <div className="flex flex-col gap-2 overflow-y-auto">

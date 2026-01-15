@@ -2,11 +2,9 @@
  * Glob Tool - Search for files by pattern
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { readdirSync, statSync } from 'fs';
+import { join, relative, sep } from 'path';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
-
-const execAsync = promisify(exec);
 
 export const GlobToolDefinition: ToolDefinition = {
   type: "function",
@@ -30,35 +28,71 @@ export const GlobToolDefinition: ToolDefinition = {
   }
 };
 
+// Simple glob matching (supports * and **)
+function matchPattern(filename: string, pattern: string): boolean {
+  // Convert glob pattern to regex
+  const regexPattern = pattern
+    .replace(/\./g, '\\.')
+    .replace(/\*\*/g, '.*')
+    .replace(/\*/g, '[^/\\\\]*')
+    .replace(/\?/g, '.');
+  
+  const regex = new RegExp(`^${regexPattern}$`, 'i');
+  return regex.test(filename);
+}
+
+// Recursively search for files matching pattern
+function searchFiles(dir: string, pattern: string, results: string[] = []): string[] {
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+      
+      if (entry.isDirectory()) {
+        // Recursively search subdirectories if pattern contains **
+        if (pattern.includes('**')) {
+          searchFiles(fullPath, pattern, results);
+        }
+      } else if (entry.isFile()) {
+        // Check if file matches pattern
+        if (matchPattern(entry.name, pattern) || matchPattern(fullPath, pattern)) {
+          results.push(fullPath);
+        }
+      }
+    }
+  } catch (error) {
+    // Skip directories we can't access
+  }
+  
+  return results;
+}
+
 export async function executeGlobTool(
   args: { pattern: string; explanation: string },
   context: ToolExecutionContext
 ): Promise<ToolResult> {
   try {
-    const isWindows = process.platform === 'win32';
+    console.log(`[Glob] Searching for pattern: ${args.pattern} in ${context.cwd}`);
     
-    // Use dir on Windows, find on Unix
-    const cmd = isWindows
-      ? `dir /s /b "${args.pattern}"`
-      : `find . -name "${args.pattern}"`;
+    const results = searchFiles(context.cwd, args.pattern);
     
-    const { stdout, stderr } = await execAsync(cmd, { 
-      cwd: context.cwd, 
-      maxBuffer: 10 * 1024 * 1024 
-    });
-    
-    return {
-      success: true,
-      output: stdout || 'No files found'
-    };
-  } catch (error: any) {
-    // find/dir returns exit code 1 when no files found
-    if (error.code === 1) {
+    if (results.length === 0) {
       return {
         success: true,
         output: 'No files found'
       };
     }
+    
+    // Return results with proper encoding (UTF-8)
+    const output = results.join('\n');
+    console.log(`[Glob] Found ${results.length} files`);
+    
+    return {
+      success: true,
+      output
+    };
+  } catch (error: any) {
     return {
       success: false,
       error: `Glob search failed: ${error.message}`

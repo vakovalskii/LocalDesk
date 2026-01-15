@@ -23,6 +23,8 @@
         "target": [
             "portable",
             "msi"
-        ]
+        ],
+        "signAndEditExecutable": false,
+        "forceCodeSigning": false
     }
 }

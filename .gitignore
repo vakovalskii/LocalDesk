@@ -13,6 +13,9 @@ dist-react
 dist-electron
 *.local
 
+# Sandbox directory for ExecuteJS
+.cowork-sandbox
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

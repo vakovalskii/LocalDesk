@@ -14,14 +14,26 @@ export function loadApiSettings(): ApiSettings | null {
   try {
     const settingsPath = getSettingsPath();
     if (!existsSync(settingsPath)) {
+      console.log('[Settings] Settings file does not exist');
       return null;
     }
     
     const raw = readFileSync(settingsPath, "utf8");
+    
+    // Check if file is empty or contains only whitespace
+    if (!raw || raw.trim() === '') {
+      console.log('[Settings] Settings file is empty');
+      return null;
+    }
+    
     const settings = JSON.parse(raw) as ApiSettings;
     
-    // Return null if all fields are empty
-    if (!settings.apiKey && !settings.baseUrl && !settings.model) {
+    // Return null if apiKey is missing or invalid
+    if (!settings.apiKey || 
+        settings.apiKey.trim() === '' || 
+        settings.apiKey === 'null' || 
+        settings.apiKey === 'undefined') {
+      console.log('[Settings] API key is missing or invalid');
       return null;
     }
     
@@ -32,7 +44,7 @@ export function loadApiSettings(): ApiSettings | null {
     
     return settings;
   } catch (error) {
-    console.error("Failed to load API settings:", error);
+    console.error("[Settings] Failed to load API settings:", error);
     return null;
   }
 }
