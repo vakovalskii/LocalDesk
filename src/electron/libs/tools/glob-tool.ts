@@ -2,8 +2,8 @@
  * Glob Tool - Search for files by pattern
  */
 
-import { readdirSync, statSync } from 'fs';
-import { join, relative, sep } from 'path';
+import { readdirSync } from 'fs';
+import { join, relative } from 'path';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
 
 export const GlobToolDefinition: ToolDefinition = {
@@ -28,43 +28,91 @@ export const GlobToolDefinition: ToolDefinition = {
   }
 };
 
-// Simple glob matching (supports * and **)
-function matchPattern(filename: string, pattern: string): boolean {
-  // Convert glob pattern to regex
-  const regexPattern = pattern
-    .replace(/\./g, '\\.')
-    .replace(/\*\*/g, '.*')
-    .replace(/\*/g, '[^/\\\\]*')
-    .replace(/\?/g, '.');
-  
-  const regex = new RegExp(`^${regexPattern}$`, 'i');
-  return regex.test(filename);
+const normalizePath = (value: string) => value.replace(/\\/g, '/');
+
+const normalizePattern = (pattern: string) => {
+  let normalized = normalizePath(pattern).trim();
+  if (normalized.startsWith('./')) normalized = normalized.slice(2);
+  if (normalized.startsWith('/')) normalized = normalized.slice(1);
+  return normalized;
+};
+
+const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&');
+
+// Simple glob matching (supports *, ?, and ** on relative paths)
+function globToRegExp(pattern: string): RegExp {
+  const normalized = normalizePattern(pattern);
+  let regex = '^';
+  let index = 0;
+
+  while (index < normalized.length) {
+    const char = normalized[index];
+
+    if (char === '*') {
+      const nextChar = normalized[index + 1];
+      if (nextChar === '*') {
+        const afterGlobstar = normalized[index + 2];
+        if (afterGlobstar === '/') {
+          regex += '(?:.*\\/)?';
+          index += 3;
+        } else {
+          regex += '.*';
+          index += 2;
+        }
+      } else {
+        regex += '[^/]*';
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === '?') {
+      regex += '[^/]';
+      index += 1;
+      continue;
+    }
+
+    regex += escapeRegex(char);
+    index += 1;
+  }
+
+  regex += '$';
+  return new RegExp(regex, 'i');
 }
 
 // Recursively search for files matching pattern
-function searchFiles(dir: string, pattern: string, results: string[] = []): string[] {
-  try {
-    const entries = readdirSync(dir, { withFileTypes: true });
-    
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
-      
-      if (entry.isDirectory()) {
-        // Recursively search subdirectories if pattern contains **
-        if (pattern.includes('**')) {
-          searchFiles(fullPath, pattern, results);
-        }
-      } else if (entry.isFile()) {
-        // Check if file matches pattern
-        if (matchPattern(entry.name, pattern) || matchPattern(fullPath, pattern)) {
-          results.push(fullPath);
-        }
+function searchFiles(
+  dir: string,
+  baseDir: string,
+  regex: RegExp,
+  patternHasSlash: boolean,
+  allowRecursive: boolean,
+  results: string[] = []
+): string[] {
+  const entries = readdirSync(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      if (allowRecursive) {
+        searchFiles(fullPath, baseDir, regex, patternHasSlash, allowRecursive, results);
+      }
+      continue;
+    }
+
+    if (entry.isFile()) {
+      const relPath = normalizePath(relative(baseDir, fullPath));
+      const matches = patternHasSlash
+        ? regex.test(relPath)
+        : regex.test(entry.name) || regex.test(relPath);
+
+      if (matches) {
+        results.push(fullPath);
       }
     }
-  } catch (error) {
-    // Skip directories we can't access
   }
-  
+
   return results;
 }
 
@@ -73,9 +121,28 @@ export async function executeGlobTool(
   context: ToolExecutionContext
 ): Promise<ToolResult> {
   try {
-    console.log(`[Glob] Searching for pattern: ${args.pattern} in ${context.cwd}`);
-    
-    const results = searchFiles(context.cwd, args.pattern);
+    if (!context.cwd || !context.cwd.trim()) {
+      return {
+        success: false,
+        error: 'Cannot search files: No workspace folder is set.'
+      };
+    }
+
+    const normalizedPattern = normalizePattern(args.pattern);
+    if (!normalizedPattern) {
+      return {
+        success: false,
+        error: 'Glob pattern is required'
+      };
+    }
+
+    console.log(`[Glob] Searching for pattern: ${normalizedPattern} in ${context.cwd}`);
+
+    const regex = globToRegExp(normalizedPattern);
+    const patternHasSlash = /[\\/]/.test(args.pattern);
+    const allowRecursive = normalizedPattern.includes('**');
+
+    const results = searchFiles(context.cwd, context.cwd, regex, patternHasSlash, allowRecursive);
     
     if (results.length === 0) {
       return {
@@ -95,8 +162,7 @@ export async function executeGlobTool(
   } catch (error: any) {
     return {
       success: false,
-      error: `Glob search failed: ${error.message}`
+      error: `Glob search failed: ${error.message || String(error)}`
     };
   }
 }
-
