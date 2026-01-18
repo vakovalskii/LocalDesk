@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import type { ApiSettings, WebSearchProvider, ZaiApiUrl, ZaiReaderApiUrl } from "../types";
+import type { ApiSettings, WebSearchProvider, ZaiApiUrl, ZaiReaderApiUrl, ModelInfo } from "../types";
 
 type SettingsModalProps = {
   onClose: () => void;
@@ -26,6 +26,12 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [showPassword, setShowPassword] = useState(false);
   const [showTavilyPassword, setShowTavilyPassword] = useState(false);
   const [showZaiPassword, setShowZaiPassword] = useState(false);
+  
+  // Model selection state
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [useCustomModel, setUseCustomModel] = useState(false); // Allow manual input if fetch fails
 
   useEffect(() => {
     if (currentSettings) {
@@ -41,6 +47,16 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableMemory(currentSettings.enableMemory || false);
       setEnableZaiReader(currentSettings.enableZaiReader || false);
       setZaiReaderApiUrl(currentSettings.zaiReaderApiUrl || 'default');
+      
+      // Reset model selection state
+      setUseCustomModel(false);
+      setAvailableModels([]);
+      setModelsError(null);
+      
+      // Load models if settings exist
+      if (currentSettings.baseUrl && currentSettings.apiKey) {
+        loadModels();
+      }
     }
   }, [currentSettings]);
 
@@ -50,6 +66,16 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       loadMemoryContent();
     }
   }, [enableMemory]);
+
+  // Load models when baseUrl or apiKey changes
+  useEffect(() => {
+    if (baseUrl && apiKey) {
+      loadModels();
+    } else {
+      setAvailableModels([]);
+      setModelsError(null);
+    }
+  }, [baseUrl, apiKey]);
 
   const loadMemoryContent = async () => {
     setMemoryLoading(true);
@@ -71,6 +97,51 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       console.error('Failed to save memory:', error);
     }
   };
+
+  const loadModels = async () => {
+    setLoadingModels(true);
+    setModelsError(null);
+    try {
+      window.electron.sendClientEvent({ type: "models.get" });
+      
+      // Listen for response
+      const unsubscribe = window.electron.onServerEvent((event) => {
+        if (event.type === "models.loaded") {
+          const models = event.payload.models;
+          setAvailableModels(models);
+          
+          // Auto-select first model if no model is set
+          if (!model && models.length > 0) {
+            setModel(models[0].id);
+          }
+          setLoadingModels(false);
+        } else if (event.type === "models.error") {
+          setModelsError(event.payload.message);
+          setLoadingModels(false);
+        }
+      });
+
+      // Store unsubscribe function to clean up later
+      (window as any).__modelsUnsubscribe = unsubscribe;
+    } catch (error) {
+      console.error('Failed to load models:', error);
+      setModelsError(String(error));
+      setLoadingModels(false);
+    }
+  };
+
+  const handleLoadModels = () => {
+    loadModels();
+  };
+
+  // Cleanup event listener on unmount
+  useEffect(() => {
+    return () => {
+      if ((window as any).__modelsUnsubscribe) {
+        (window as any).__modelsUnsubscribe();
+      }
+    };
+  }, []);
 
   const handleSave = async () => {
     const tempValue = parseFloat(temperature);
@@ -110,6 +181,9 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setEnableMemory(false);
     setEnableZaiReader(false);
     setZaiReaderApiUrl('default');
+    setAvailableModels([]);
+    setUseCustomModel(false);
+    setModelsError(null);
   };
 
   return (
@@ -171,14 +245,80 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
             <div>
               <label className="block text-sm font-medium text-ink-700 mb-2">
                 Model Name
+                <span className="ml-2 text-xs font-normal text-ink-500">
+                  {availableModels.length > 0 && !useCustomModel 
+                    ? `${availableModels.length} models available` 
+                    : 'Enter model name manually'}
+                </span>
               </label>
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="e.g., claude-3-5-sonnet-20241022"
-                className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-              />
+              
+              {useCustomModel || availableModels.length === 0 ? (
+                // Manual input mode
+                <div>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="e.g., claude-3-5-sonnet-20241022"
+                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
+                  />
+                  {availableModels.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setUseCustomModel(false)}
+                      className="mt-2 text-xs text-accent hover:underline"
+                    >
+                      ← Use model selector instead
+                    </button>
+                  )}
+                </div>
+              ) : (
+                // Model selector mode
+                <div>
+                  <select
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
+                  >
+                    <option value="">Select a model...</option>
+                    {availableModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                  
+                  {loadingModels && (
+                    <p className="mt-1 text-xs text-ink-500">
+                      Loading models...
+                    </p>
+                  )}
+                  
+                  {modelsError && (
+                    <p className="mt-1 text-xs text-red-600">
+                      Failed to load models: {modelsError}
+                    </p>
+                  )}
+                  
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={handleLoadModels}
+                      disabled={loadingModels || !baseUrl || !apiKey}
+                      className="text-xs text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Refresh models
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseCustomModel(true)}
+                      className="text-xs text-ink-600 hover:underline"
+                    >
+                      Enter model name manually
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

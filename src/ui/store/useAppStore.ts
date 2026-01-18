@@ -152,20 +152,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       case "session.history": {
-        const { sessionId, messages, status } = event.payload;
+        const { sessionId, messages, status, inputTokens, outputTokens } = event.payload;
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
           return {
             sessions: {
               ...state.sessions,
-              [sessionId]: { 
-                ...existing, 
-                status, 
-                messages, 
+              [sessionId]: {
+                ...existing,
+                status,
+                messages,
                 hydrated: true,
-                // Preserve token counts from existing session
-                inputTokens: existing.inputTokens,
-                outputTokens: existing.outputTokens
+                // Use token counts from payload (from DB), fallback to existing values
+                inputTokens: inputTokens ?? existing.inputTokens,
+                outputTokens: outputTokens ?? existing.outputTokens
               }
             }
           };
@@ -221,10 +221,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         const { sessionId, message } = event.payload;
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
+
+          // Extract token usage from result messages
+          let inputTokens = existing.inputTokens;
+          let outputTokens = existing.outputTokens;
+          if (message.type === "result" && message.usage) {
+            const { input_tokens, output_tokens } = message.usage;
+            if (input_tokens !== undefined) {
+              inputTokens = input_tokens;
+            }
+            if (output_tokens !== undefined) {
+              outputTokens = output_tokens;
+            }
+          }
+
           return {
             sessions: {
               ...state.sessions,
-              [sessionId]: { ...existing, messages: [...existing.messages, message] }
+              [sessionId]: {
+                ...existing,
+                messages: [...existing.messages, message],
+                inputTokens,
+                outputTokens
+              }
             }
           };
         });
