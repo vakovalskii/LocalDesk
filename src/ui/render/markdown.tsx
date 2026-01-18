@@ -56,7 +56,24 @@ export default function MDContent({ text }: { text: string }) {
               {children}
             </code>
           );
-        }
+        },
+        // Markdown table components with borders
+        table: (props) => (
+          <div className="mt-3 overflow-x-auto rounded-lg border border-ink-900/20 bg-surface-tertiary">
+            <table className="w-full border-collapse text-sm" {...props} />
+          </div>
+        ),
+        thead: (props) => (
+          <thead className="border-b border-ink-900/20 bg-surface-secondary" {...props} />
+        ),
+        tbody: (props) => <tbody className="divide-y divide-ink-900/10" {...props} />,
+        tr: (props) => <tr className="hover:bg-surface-200/30 transition-colors" {...props} />,
+        th: (props) => (
+          <th className="border-r border-ink-900/10 px-3 py-2 text-left font-semibold text-ink-900 last:border-r-0" {...props} />
+        ),
+        td: (props) => (
+          <td className="border-r border-ink-900/10 px-3 py-2 text-ink-700 last:border-r-0" {...props} />
+        ),
       }}
     >
       {String(text ?? "")}
