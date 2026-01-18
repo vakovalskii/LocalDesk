@@ -367,7 +367,7 @@ function App() {
           </div>
         </div>
 
-        <div ref={messagesContainerRef} id="messages-container" className="flex-1 overflow-y-auto overflow-x-hidden px-8 pb-40 pt-6 min-w-0">
+        <div ref={messagesContainerRef} id="messages-container" className="flex-1 overflow-y-auto overflow-x-hidden px-8 pb-4 pt-6 min-w-0">
           <div className="mx-auto w-full max-w-4xl min-w-0">
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
