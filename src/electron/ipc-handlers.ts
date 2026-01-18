@@ -73,7 +73,9 @@ export function handleClientEvent(event: ClientEvent) {
       payload: {
         sessionId: history.session.id,
         status: history.session.status,
-        messages: history.messages
+        messages: history.messages,
+        inputTokens: history.session.inputTokens,
+        outputTokens: history.session.outputTokens
       }
     });
     return;
@@ -376,6 +378,76 @@ export function handleClientEvent(event: ClientEvent) {
   if (event.type === "open.external") {
     shell.openExternal(event.payload.url);
     return;
+  }
+
+  if (event.type === "models.get") {
+    fetchModels().then(models => {
+      emit({
+        type: "models.loaded",
+        payload: { models }
+      });
+    }).catch(error => {
+      console.error('[IPC] Failed to fetch models:', error);
+      emit({
+        type: "models.error",
+        payload: { message: String(error) }
+      });
+    });
+    return;
+  }
+}
+
+async function fetchModels(): Promise<Array<{ id: string; name: string; description?: string }>> {
+  const settings = loadApiSettings();
+  
+  if (!settings || !settings.baseUrl || !settings.apiKey) {
+    throw new Error('API settings not configured');
+  }
+
+  // Ensure baseURL ends with /v1 for OpenAI compatibility
+  let baseURL = settings.baseUrl;
+  if (!baseURL.endsWith('/v1')) {
+    baseURL = baseURL.endsWith('/') ? baseURL + 'v1' : baseURL + '/v1';
+  }
+
+  try {
+    const response = await fetch(`${baseURL}/models`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${settings.apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    // Handle different response formats
+    if (data.data && Array.isArray(data.data)) {
+      // OpenAI-style response: { data: [{ id, ... }] }
+      return data.data.map((model: any) => ({
+        id: model.id,
+        name: model.name || model.id,
+        description: model.description
+      }));
+    } else if (Array.isArray(data)) {
+      // Simple array response: [{ id, ... }]
+      return data.map((model: any) => ({
+        id: model.id,
+        name: model.name || model.id,
+        description: model.description
+      }));
+    } else {
+      console.warn('[IPC] Unexpected models response format:', data);
+      return [];
+    }
+  } catch (error) {
+    console.error('[IPC] Error fetching models:', error);
+    throw error;
   }
 }
 

@@ -32,6 +32,12 @@ export type ApiSettings = {
   zaiReaderApiUrl?: ZaiReaderApiUrl; // Z.AI Reader API URL variant: 'default' or 'coding'
 };
 
+export type ModelInfo = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
 export type UserPromptMessage = {
   type: "user_prompt";
   prompt: string;
@@ -60,11 +66,13 @@ export type ServerEvent =
   | { type: "stream.user_prompt"; payload: { sessionId: string; prompt: string } }
   | { type: "session.status"; payload: { sessionId: string; status: SessionStatus; title?: string; cwd?: string; error?: string } }
   | { type: "session.list"; payload: { sessions: SessionInfo[] } }
-  | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[] } }
+  | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number } }
   | { type: "session.deleted"; payload: { sessionId: string } }
   | { type: "permission.request"; payload: { sessionId: string; toolUseId: string; toolName: string; input: unknown; explanation?: string } }
   | { type: "runner.error"; payload: { sessionId?: string; message: string } }
-  | { type: "settings.loaded"; payload: { settings: ApiSettings | null } };
+  | { type: "settings.loaded"; payload: { settings: ApiSettings | null } }
+  | { type: "models.loaded"; payload: { models: ModelInfo[] } }
+  | { type: "models.error"; payload: { message: string } };
 
 // Client -> Server events
 export type ClientEvent =
@@ -80,4 +88,5 @@ export type ClientEvent =
   | { type: "message.edit"; payload: { sessionId: string; messageIndex: number; newPrompt: string } }
   | { type: "settings.get" }
   | { type: "settings.save"; payload: { settings: ApiSettings } }
-  | { type: "open.external"; payload: { url: string } };
+  | { type: "open.external"; payload: { url: string } }
+  | { type: "models.get" };
