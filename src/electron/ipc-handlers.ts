@@ -3,6 +3,8 @@ import type { ClientEvent, ServerEvent } from "./types.js";
 // import { runClaude, type RunnerHandle } from "./libs/runner.js"; // Old Claude SDK runner
 import { runClaude, type RunnerHandle } from "./libs/runner-openai.js"; // New OpenAI SDK runner
 import { SessionStore } from "./libs/session-store.js";
+import { SchedulerStore } from "./libs/scheduler-store.js";
+import { SchedulerService } from "./libs/scheduler-service.js";
 import { loadApiSettings, saveApiSettings } from "./libs/settings-store.js";
 import { generateSessionTitle } from "./libs/util.js";
 import { app } from "electron";
@@ -11,10 +13,12 @@ import { sessionManager } from "./session-manager.js";
 
 const DB_PATH = join(app.getPath("userData"), "sessions.db");
 const sessions = new SessionStore(DB_PATH);
+const schedulerStore = new SchedulerStore(sessions['db']); // Access the database
 const runnerHandles = new Map<string, RunnerHandle>();
 
-// Make sessionStore globally available for runner
+// Make sessionStore and schedulerStore globally available for runner
 (global as any).sessionStore = sessions;
+(global as any).schedulerStore = schedulerStore;
 
 // Broadcast function for events without sessionId (session.list, models.loaded, etc.)
 function broadcast(event: ServerEvent) {
@@ -518,4 +522,67 @@ async function fetchModels(): Promise<Array<{ id: string; name: string; descript
   }
 }
 
-export { sessions };
+// Initialize scheduler service
+let schedulerService: SchedulerService | null = null;
+
+async function executeScheduledTask(task: any) {
+  console.log(`[Scheduler] Executing scheduled task: ${task.title}`);
+  
+  if (!task.prompt) {
+    // Just a reminder, no action needed
+    return;
+  }
+
+  // Execute the prompt in a temporary session
+  const apiSettings = loadApiSettings();
+  if (!apiSettings) {
+    console.error('[Scheduler] No API settings found');
+    return;
+  }
+
+  // Create a temporary session for scheduled task
+  const tempSession = sessions.createSession({
+    title: `Scheduled: ${task.title}`,
+    cwd: '', // No workspace for scheduled tasks
+    allowedTools: 'default',
+    prompt: task.prompt
+  });
+
+  const session = sessions.getSession(tempSession.id);
+  if (!session) {
+    console.error('[Scheduler] Failed to create session');
+    return;
+  }
+
+  try {
+    // Run the prompt
+    await runClaude({
+      prompt: task.prompt,
+      session,
+      onEvent: emit
+    });
+  } catch (error) {
+    console.error(`[Scheduler] Error executing task ${task.id}:`, error);
+  }
+}
+
+export function startScheduler() {
+  if (schedulerService) {
+    console.log('[Scheduler] Already started');
+    return;
+  }
+
+  schedulerService = new SchedulerService(schedulerStore, executeScheduledTask);
+  schedulerService.start();
+  console.log('[Scheduler] Service started');
+}
+
+export function stopScheduler() {
+  if (schedulerService) {
+    schedulerService.stop();
+    schedulerService = null;
+    console.log('[Scheduler] Service stopped');
+  }
+}
+
+export { sessions, schedulerStore };

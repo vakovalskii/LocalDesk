@@ -22,6 +22,8 @@ import { executeJSTool } from './tools/execute-js-tool.js';
 import { executeReadDocumentTool } from './tools/read-document-tool.js';
 import { executeRenderPageTool } from './tools/render-page-tool.js';
 import { executeManageTodosTool } from './tools/manage-todos-tool.js';
+import { ScheduleTaskTool } from './tools/schedule-task-tool.js';
+import type { SchedulerStore } from './scheduler-store.js';
 
 export { ToolResult };
 
@@ -31,8 +33,9 @@ export class ToolExecutor {
   private webSearchTool: WebSearchTool | null = null;
   private extractPageTool: ExtractPageContentTool | null = null;
   private zaiReaderTool: ZaiReaderTool | null = null;
+  private scheduleTaskTool: ScheduleTaskTool | null = null;
 
-  constructor(cwd: string, apiSettings: ApiSettings | null = null) {
+  constructor(cwd: string, apiSettings: ApiSettings | null = null, schedulerStore?: SchedulerStore) {
     // Normalize and resolve the working directory to absolute path
     // If cwd is empty or undefined, keep it empty (no workspace mode)
     this.cwd = cwd && cwd.trim() ? normalize(resolve(cwd)) : '';
@@ -60,6 +63,11 @@ export class ToolExecutor {
       this.zaiReaderTool = new ZaiReaderTool(apiSettings.zaiApiKey, zaiReaderApiUrl);
     } else {
       this.zaiReaderTool = null;
+
+    // Initialize scheduler tool
+    if (schedulerStore) {
+      this.scheduleTaskTool = new ScheduleTaskTool(schedulerStore);
+    }
     }
   }
 
@@ -175,6 +183,9 @@ export class ToolExecutor {
           return await executeReadDocumentTool(args as any, context);
         
         case 'render_page':
+        case 'schedule_task':
+          return await this.executeScheduleTask(args, context);
+        
           return await executeRenderPageTool(args as any, context);
         
         case 'manage_todos':
@@ -278,5 +289,16 @@ export class ToolExecutor {
         error: `Z.AI Reader failed: ${error.message}`
       };
     }
+  }
+
+  private async executeScheduleTask(args: any, context: ToolExecutionContext): Promise<ToolResult> {
+    if (!this.scheduleTaskTool) {
+      return {
+        success: false,
+        error: 'Scheduler is not available. Database not initialized.'
+      };
+    }
+
+    return await this.scheduleTaskTool.execute(args, context);
   }
 }

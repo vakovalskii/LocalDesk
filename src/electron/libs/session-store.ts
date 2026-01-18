@@ -375,6 +375,24 @@ export class SessionStore {
     } catch (e) {
       // Column already exists, ignore
     }
+
+    // Create scheduled_tasks table
+    this.db.exec(
+      `create table if not exists scheduled_tasks (
+        id text primary key,
+        title text not null,
+        prompt text,
+        schedule text not null,
+        next_run integer not null,
+        is_recurring integer default 0,
+        notify_before integer,
+        enabled integer default 1,
+        created_at integer not null,
+        updated_at integer not null
+      )`
+    );
+    this.db.exec(`create index if not exists scheduled_tasks_next_run on scheduled_tasks(next_run)`);
+    this.db.exec(`create index if not exists scheduled_tasks_enabled on scheduled_tasks(enabled)`);
   }
 
   private loadSessions(): void {

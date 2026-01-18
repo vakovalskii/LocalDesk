@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from "electron"
 import { ipcMainHandle, isDev, DEV_PORT } from "./util.js";
 import { getPreloadPath, getUIPath, getIconPath } from "./pathResolver.js";
 import { getStaticData, pollResources } from "./test.js";
-import { handleClientEvent, sessions } from "./ipc-handlers.js";
+import { handleClientEvent, sessions, startScheduler, stopScheduler } from "./ipc-handlers.js";
 import { sessionManager } from "./session-manager.js";
 import { generateSessionTitle } from "./libs/util.js";
 import type { ClientEvent } from "./types.js";
@@ -11,6 +11,9 @@ import { promises as fs } from 'fs';
 import { join, resolve } from 'path';
 
 app.on("ready", () => {
+    // Start the scheduler service
+    startScheduler();
+
     const mainWindow = new BrowserWindow({
         width: 1200,
         height: 900,
@@ -281,3 +284,7 @@ app.on("ready", () => {
         }
     });
 })
+// Stop scheduler on app quit
+app.on("will-quit", () => {
+    stopScheduler();
+});

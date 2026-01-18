@@ -156,9 +156,12 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
         maxRetries: 2
       });
 
+      // Get scheduler store from global
+      const schedulerStore = (global as any).schedulerStore;
+
       // Initialize tool executor with API settings for web tools
       // If no cwd, pass empty string to enable "no workspace" mode
-      const toolExecutor = new ToolExecutor(session.cwd || '', guiSettings);
+      const toolExecutor = new ToolExecutor(session.cwd || '', guiSettings, schedulerStore);
 
       // Build conversation history from session
       const currentCwd = session.cwd || 'No workspace folder';

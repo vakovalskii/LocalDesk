@@ -35,6 +35,9 @@ export * from './render-page-tool.js';
 // ManageTodos tool (Task planning)
 export * from './manage-todos-tool.js';
 
+// ScheduleTask tool (Task scheduling with notifications)
+export * from './schedule-task-tool.js';
+
 // Tool definitions array
 import { BashToolDefinition } from './bash-tool.js';
 import { ReadToolDefinition } from './read-tool.js';
@@ -50,6 +53,7 @@ import { ExecuteJSToolDefinition } from './execute-js-tool.js';
 import { ReadDocumentToolDefinition } from './read-document-tool.js';
 import { RenderPageToolDefinition } from './render-page-tool.js';
 import { ManageTodosToolDefinition } from './manage-todos-tool.js';
+import { ScheduleTaskToolDefinition } from './schedule-task-tool.js';
 
 export const ALL_TOOL_DEFINITIONS = [
   BashToolDefinition,
@@ -65,5 +69,6 @@ export const ALL_TOOL_DEFINITIONS = [
   ExecuteJSToolDefinition,
   ReadDocumentToolDefinition,
   RenderPageToolDefinition,
-  ManageTodosToolDefinition
+  ManageTodosToolDefinition,
+  ScheduleTaskToolDefinition
 ];
