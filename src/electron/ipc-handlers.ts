@@ -7,6 +7,7 @@ import { loadApiSettings, saveApiSettings } from "./libs/settings-store.js";
 import { generateSessionTitle } from "./libs/util.js";
 import { app } from "electron";
 import { join } from "path";
+import { sessionManager } from "./session-manager.js";
 
 const DB_PATH = join(app.getPath("userData"), "sessions.db");
 const sessions = new SessionStore(DB_PATH);
@@ -15,6 +16,7 @@ const runnerHandles = new Map<string, RunnerHandle>();
 // Make sessionStore globally available for runner
 (global as any).sessionStore = sessions;
 
+// Broadcast function for events without sessionId (session.list, models.loaded, etc.)
 function broadcast(event: ServerEvent) {
   const payload = JSON.stringify(event);
   const windows = BrowserWindow.getAllWindows();
@@ -24,6 +26,7 @@ function broadcast(event: ServerEvent) {
 }
 
 function emit(event: ServerEvent) {
+  // Save to database (existing logic)
   if (event.type === "session.status") {
     sessions.updateSession(event.payload.sessionId, { status: event.payload.status });
   }
@@ -48,12 +51,14 @@ function emit(event: ServerEvent) {
       prompt: event.payload.prompt
     });
   }
-  broadcast(event);
+
+  // Route event through SessionManager
+  sessionManager.emit(event, broadcast);
 }
 
-export function handleClientEvent(event: ClientEvent) {
+export function handleClientEvent(event: ClientEvent, windowId: number) {
   if (event.type === "session.list") {
-    emit({
+    sessionManager.emitToWindow(windowId, {
       type: "session.list",
       payload: { sessions: sessions.listSessions() }
     });
@@ -61,15 +66,21 @@ export function handleClientEvent(event: ClientEvent) {
   }
 
   if (event.type === "session.history") {
-    const history = sessions.getSessionHistory(event.payload.sessionId);
+    const sessionId = event.payload.sessionId;
+    const history = sessions.getSessionHistory(sessionId);
     if (!history) {
-      emit({
+      sessionManager.emitToWindow(windowId, {
         type: "runner.error",
         payload: { message: "Unknown session" }
       });
       return;
     }
-    emit({
+
+    // Subscribe this window to the session
+    sessionManager.setWindowSession(windowId, sessionId);
+
+    // Send history only to this window
+    sessionManager.emitToWindow(windowId, {
       type: "session.history",
       payload: {
         sessionId: history.session.id,
@@ -90,13 +101,16 @@ export function handleClientEvent(event: ClientEvent) {
       prompt: event.payload.prompt
     });
 
+    // Subscribe this window to the session
+    sessionManager.setWindowSession(windowId, session.id);
+
     // If prompt is empty, just create session without running AI
     if (!event.payload.prompt || event.payload.prompt.trim() === '') {
       sessions.updateSession(session.id, {
         status: "idle",
         lastPrompt: ""
       });
-      emit({
+      sessionManager.emitToWindow(windowId, {
         type: "session.status",
         payload: { sessionId: session.id, status: "idle", title: session.title, cwd: session.cwd }
       });
@@ -108,12 +122,12 @@ export function handleClientEvent(event: ClientEvent) {
       status: "running",
       lastPrompt: event.payload.prompt
     });
-    emit({
+    sessionManager.emitToWindow(windowId, {
       type: "session.status",
       payload: { sessionId: session.id, status: "running", title: session.title, cwd: session.cwd }
     });
 
-    emit({
+    sessionManager.emitToWindow(windowId, {
       type: "stream.user_prompt",
       payload: { sessionId: session.id, prompt: event.payload.prompt }
     });
@@ -133,7 +147,7 @@ export function handleClientEvent(event: ClientEvent) {
       })
       .catch((error) => {
         sessions.updateSession(session.id, { status: "error" });
-        emit({
+        sessionManager.emitToWindow(windowId, {
           type: "session.status",
           payload: {
             sessionId: session.id,
@@ -151,12 +165,15 @@ export function handleClientEvent(event: ClientEvent) {
   if (event.type === "session.continue") {
     const session = sessions.getSession(event.payload.sessionId);
     if (!session) {
-      emit({
+      sessionManager.emitToWindow(windowId, {
         type: "runner.error",
         payload: { message: "Unknown session" }
       });
       return;
     }
+
+    // Subscribe this window to the session
+    sessionManager.setWindowSession(windowId, session.id);
 
     // If session has no claudeSessionId yet (was created empty), treat this as first run
     const isFirstRun = !session.claudeSessionId;
@@ -181,12 +198,12 @@ export function handleClientEvent(event: ClientEvent) {
     }
 
     sessions.updateSession(session.id, { status: "running", lastPrompt: event.payload.prompt });
-    emit({
+    sessionManager.emitToWindow(windowId, {
       type: "session.status",
       payload: { sessionId: session.id, status: "running", title: sessionTitle, cwd: session.cwd }
     });
 
-    emit({
+    sessionManager.emitToWindow(windowId, {
       type: "stream.user_prompt",
       payload: { sessionId: session.id, prompt: event.payload.prompt }
     });
@@ -205,7 +222,7 @@ export function handleClientEvent(event: ClientEvent) {
       })
       .catch((error) => {
         sessions.updateSession(session.id, { status: "error" });
-        emit({
+        sessionManager.emitToWindow(windowId, {
           type: "session.status",
           payload: {
             sessionId: session.id,
@@ -231,7 +248,7 @@ export function handleClientEvent(event: ClientEvent) {
     }
 
     sessions.updateSession(session.id, { status: "idle" });
-    emit({
+    sessionManager.emitToWindow(windowId, {
       type: "session.status",
       payload: { sessionId: session.id, status: "idle", title: session.title, cwd: session.cwd }
     });
@@ -249,7 +266,9 @@ export function handleClientEvent(event: ClientEvent) {
     // Always try to delete and emit deleted event
     // Don't emit error if session doesn't exist - it may have already been deleted
     sessions.deleteSession(sessionId);
-    emit({
+
+    // Broadcast session.deleted since it should update all windows' session lists
+    broadcast({
       type: "session.deleted",
       payload: { sessionId }
     });
@@ -259,7 +278,8 @@ export function handleClientEvent(event: ClientEvent) {
   if (event.type === "session.pin") {
     const { sessionId, isPinned } = event.payload;
     sessions.setPinned(sessionId, isPinned);
-    emit({
+    // Broadcast session.list since pinning affects all windows' session lists
+    broadcast({
       type: "session.list",
       payload: { sessions: sessions.listSessions() }
     });
@@ -271,6 +291,7 @@ export function handleClientEvent(event: ClientEvent) {
     sessions.updateSession(sessionId, { cwd });
     const session = sessions.getSession(sessionId);
     if (session) {
+      // Use emit to route only to subscribed windows
       emit({
         type: "session.status",
         payload: { sessionId: session.id, status: session.status, title: session.title, cwd: session.cwd }
@@ -296,9 +317,9 @@ export function handleClientEvent(event: ClientEvent) {
   if (event.type === "message.edit") {
     const { sessionId, messageIndex, newPrompt } = event.payload;
     const session = sessions.getSession(sessionId);
-    
+
     if (!session) {
-      emit({
+      sessionManager.emitToWindow(windowId, {
         type: "runner.error",
         payload: { message: "Unknown session" }
       });
@@ -318,10 +339,10 @@ export function handleClientEvent(event: ClientEvent) {
     // Update the message with new prompt
     sessions.updateMessageAt(sessionId, messageIndex, { prompt: newPrompt });
 
-    // Get updated history and send to UI
+    // Get updated history and send to UI (only to this window)
     const updatedHistory = sessions.getSessionHistory(sessionId);
     if (updatedHistory) {
-      emit({
+      sessionManager.emitToWindow(windowId, {
         type: "session.history",
         payload: {
           sessionId: updatedHistory.session.id,
@@ -372,7 +393,7 @@ export function handleClientEvent(event: ClientEvent) {
 
   if (event.type === "settings.get") {
     const settings = loadApiSettings();
-    emit({
+    sessionManager.emitToWindow(windowId, {
       type: "settings.loaded",
       payload: { settings }
     });
@@ -382,12 +403,12 @@ export function handleClientEvent(event: ClientEvent) {
   if (event.type === "settings.save") {
     try {
       saveApiSettings(event.payload.settings);
-      emit({
+      sessionManager.emitToWindow(windowId, {
         type: "settings.loaded",
         payload: { settings: event.payload.settings }
       });
     } catch (error) {
-      emit({
+      sessionManager.emitToWindow(windowId, {
         type: "runner.error",
         payload: { message: `Failed to save settings: ${error}` }
       });
