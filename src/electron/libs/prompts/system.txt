@@ -39,6 +39,7 @@ All tools follow snake_case naming convention: verb_noun
 - `search_web` - Search the internet
 - `extract_page` - Extract full page content (Tavily only)
 - `read_page` - Read web page (Z.AI Reader, if enabled)
+- `render_page` - Render page in Chromium and extract content (for JS-heavy SPAs)
 
 **Memory:**
 - `manage_memory` - Store/read long-term memory (if enabled)

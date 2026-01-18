@@ -20,6 +20,7 @@ import { ZaiReaderTool } from './tools/zai-reader.js';
 import { executeMemoryTool } from './tools/memory-tool.js';
 import { executeJSTool } from './tools/execute-js-tool.js';
 import { executeReadDocumentTool } from './tools/read-document-tool.js';
+import { executeRenderPageTool } from './tools/render-page-tool.js';
 
 export { ToolResult };
 
@@ -170,6 +171,9 @@ export class ToolExecutor {
         
         case 'read_document':
           return await executeReadDocumentTool(args as any, context);
+        
+        case 'render_page':
+          return await executeRenderPageTool(args as any, context);
         
         default:
           return {

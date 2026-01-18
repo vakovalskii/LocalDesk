@@ -29,6 +29,9 @@ export * from './execute-js-tool.js';
 // ReadDocument tool (PDF + DOCX)
 export * from './read-document-tool.js';
 
+// RenderPage tool (Chromium browser rendering)
+export * from './render-page-tool.js';
+
 // Tool definitions array
 import { BashToolDefinition } from './bash-tool.js';
 import { ReadToolDefinition } from './read-tool.js';
@@ -42,6 +45,7 @@ import { ZaiReaderToolDefinition } from './zai-reader.js';
 import { MemoryToolDefinition } from './memory-tool.js';
 import { ExecuteJSToolDefinition } from './execute-js-tool.js';
 import { ReadDocumentToolDefinition } from './read-document-tool.js';
+import { RenderPageToolDefinition } from './render-page-tool.js';
 
 export const ALL_TOOL_DEFINITIONS = [
   BashToolDefinition,
@@ -55,5 +59,6 @@ export const ALL_TOOL_DEFINITIONS = [
   ZaiReaderToolDefinition,
   MemoryToolDefinition,
   ExecuteJSToolDefinition,
-  ReadDocumentToolDefinition
+  ReadDocumentToolDefinition,
+  RenderPageToolDefinition
 ];
