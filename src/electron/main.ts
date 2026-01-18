@@ -3,6 +3,7 @@ import { ipcMainHandle, isDev, DEV_PORT } from "./util.js";
 import { getPreloadPath, getUIPath, getIconPath } from "./pathResolver.js";
 import { getStaticData, pollResources } from "./test.js";
 import { handleClientEvent, sessions } from "./ipc-handlers.js";
+import { sessionManager } from "./session-manager.js";
 import { generateSessionTitle } from "./libs/util.js";
 import type { ClientEvent } from "./types.js";
 import "./libs/claude-settings.js";
@@ -27,6 +28,9 @@ app.on("ready", () => {
 
     if (isDev()) mainWindow.loadURL(`http://localhost:${DEV_PORT}`)
     else mainWindow.loadFile(getUIPath());
+
+    // Register window with SessionManager for event routing
+    sessionManager.registerWindow(mainWindow);
 
     // Set spell checker languages (English and Russian)
     mainWindow.webContents.session.setSpellCheckerLanguages(['en-US', 'ru']);
@@ -78,8 +82,14 @@ app.on("ready", () => {
     });
 
     // Handle client events
-    ipcMain.on("client-event", (_, event: ClientEvent) => {
-        handleClientEvent(event);
+    ipcMain.on("client-event", (event, data: ClientEvent) => {
+        // Get window ID from sender's webContents
+        const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+        if (windowId === undefined) {
+            console.error('[Main] Unable to determine window ID for client event');
+            return;
+        }
+        handleClientEvent(data, windowId);
     });
 
     // Handle open directory in Finder/Explorer
