@@ -8,12 +8,13 @@
 
 **Desktop AI Assistant with Local Model Support**
 
-> 🔱 Forked from [DevAgentForge/Claude-Cowork](https://github.com/DevAgentForge/Claude-Cowork)  
-> Reworked to support OpenAI SDK and local models (vLLM, Qwen, Llama)
-
 </div>
 
 ---
+
+
+https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
+
 
 ## ✨ Features
 
