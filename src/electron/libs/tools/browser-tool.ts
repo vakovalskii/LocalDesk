@@ -36,16 +36,21 @@ export const BrowserNavigateToolDefinition: ToolDefinition = {
   type: "function",
   function: {
     name: "browser_navigate",
-    description: `Navigate to a URL in a headless browser.
+    description: `Open and navigate to a URL in a headless browser. CALL THIS FIRST to open any webpage in the browser.
+
+**IMPORTANT:** This is the tool to open/visit URLs in the browser (there is NO "browser_open" tool).
 
 **Use this for:**
-- Interactive websites requiring JavaScript
+- Opening interactive websites requiring JavaScript
 - Sites that need cookies/sessions
 - Dynamic content loading
+- Any webpage you want to interact with
 
 **Don't use for:**
-- Simple static pages (use fetch_html instead)
+- Simple static pages (use fetch_html instead - 10x faster)
 - API endpoints (use fetch or fetch_json)
+
+**After navigating:** Call browser_snapshot to see what's on the page
 
 **Parameters:**
 - url: URL to navigate to (required)
