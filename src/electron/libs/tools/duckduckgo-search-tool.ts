@@ -274,41 +274,67 @@ function parseSearchResults(html: string, maxResults: number): SearchResult[] {
  * Parse DuckDuckGo news results from HTML
  */
 function parseNewsResults(html: string, maxResults: number): NewsResult[] {
-  const results: NewsResult[] = [];
+  const results: SearchResult[] = [];
 
-  // News results have similar structure but may include source and date
-  const resultPattern =
-    /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/div>/g;
+  // Try the same patterns as regular search since news uses similar HTML
+  const patterns = [
+    // Pattern 1: Standard result with class="result"
+    /class="result[^"]*"[\s\S]*?<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/div>/g,
+    
+    // Pattern 2: Links module format
+    /class="links_main[^"]*"[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/g,
+    
+    // Pattern 3: Simple link + text format
+    /<a[^>]+href="\/\/duckduckgo\.com\/l\/\?uddg=([^"&]+)[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<div[^>]*class="[^"]*snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/g,
+  ];
 
-  let match;
   let position = 1;
 
-  while (
-    (match = resultPattern.exec(html)) !== null &&
-    results.length < maxResults
-  ) {
-    const url = match[1];
-    const titleHtml = match[2];
-    const snippetHtml = match[3];
+  for (const pattern of patterns) {
+    let match;
+    while (
+      (match = pattern.exec(html)) !== null &&
+      results.length < maxResults
+    ) {
+      let url = match[1];
+      const titleHtml = match[2];
+      const snippetHtml = match[3];
 
-    if (url.startsWith("/") || url.includes("duckduckgo.com")) {
-      continue;
+      // Decode URL if it's encoded
+      try {
+        url = decodeURIComponent(url);
+      } catch (e) {
+        // If decode fails, use as is
+      }
+
+      // Skip ads and DuckDuckGo internal links
+      if (!url || url.startsWith("/") || url.includes("duckduckgo.com/y.js")) {
+        continue;
+      }
+
+      // Ensure URL has protocol
+      if (!url.startsWith("http")) {
+        url = "https://" + url;
+      }
+
+      const result: NewsResult = {
+        title: stripHtml(titleHtml),
+        url: url,
+        snippet: stripHtml(snippetHtml),
+        position: position++,
+      };
+
+      // Try to extract source and date from snippet
+      const sourceMatch = snippetHtml.match(/<span[^>]*>([^<]+)<\/span>/);
+      if (sourceMatch) {
+        result.source = stripHtml(sourceMatch[1]);
+      }
+
+      results.push(result);
     }
-
-    const result: NewsResult = {
-      title: stripHtml(titleHtml),
-      url: url,
-      snippet: stripHtml(snippetHtml),
-      position: position++,
-    };
-
-    // Try to extract source and date from snippet
-    const sourceMatch = snippetHtml.match(/<span[^>]*>([^<]+)<\/span>/);
-    if (sourceMatch) {
-      result.source = stripHtml(sourceMatch[1]);
-    }
-
-    results.push(result);
+    
+    // If we got results with this pattern, don't try others
+    if (results.length > 0) break;
   }
 
   return results;
@@ -442,9 +468,14 @@ export async function executeSearchNewsTool(
     const results = parseNewsResults(html, limit);
 
     if (results.length === 0) {
+      // Log HTML snippet for debugging (first 500 chars)
+      console.log(
+        "[DuckDuckGo News] No results parsed. HTML preview:",
+        html.substring(0, 500),
+      );
       return {
         success: false,
-        error: `No news results found for: ${query}`,
+        error: `No news results found for: ${query}. The search may be rate-limited or DuckDuckGo's HTML structure changed.`,
       };
     }
 
