@@ -1,5 +1,5 @@
 import { BrowserWindow, shell } from "electron";
-import type { ClientEvent, ServerEvent } from "./types.js";
+import type { ClientEvent, ServerEvent, MultiThreadTask } from "./types.js";
 // import { runClaude, type RunnerHandle } from "./libs/runner.js"; // Old Claude SDK runner
 import { runClaude, type RunnerHandle } from "./libs/runner-openai.js"; // New OpenAI SDK runner
 import { SessionStore } from "./libs/session-store.js";
@@ -10,11 +10,15 @@ import { generateSessionTitle } from "./libs/util.js";
 import { app } from "electron";
 import { join } from "path";
 import { sessionManager } from "./session-manager.js";
+import * as gitUtils from "./git-utils.js";
+import type { CreateTaskPayload, ThreadTask } from "./types.js";
+import { webCache } from "./libs/web-cache.js";
 
 const DB_PATH = join(app.getPath("userData"), "sessions.db");
 const sessions = new SessionStore(DB_PATH);
 const schedulerStore = new SchedulerStore(sessions['db']); // Access the database
 const runnerHandles = new Map<string, RunnerHandle>();
+const multiThreadTasks = new Map<string, MultiThreadTask>();
 
 // Make sessionStore and schedulerStore globally available for runner
 (global as any).sessionStore = sessions;
@@ -33,6 +37,22 @@ function emit(event: ServerEvent) {
   // Save to database (existing logic)
   if (event.type === "session.status") {
     sessions.updateSession(event.payload.sessionId, { status: event.payload.status });
+
+    // Save token usage if provided in session.status payload
+    const payload = event.payload as any;
+    if (payload.usage) {
+      const { input_tokens, output_tokens } = payload.usage;
+      if (input_tokens !== undefined || output_tokens !== undefined) {
+        sessions.updateTokens(
+          event.payload.sessionId,
+          input_tokens || 0,
+          output_tokens || 0
+        );
+      }
+    }
+
+    // Check if this session is part of a multi-thread task and update task status
+    checkAndUpdateMultiThreadTaskStatus(event.payload.sessionId, emit);
   }
   if (event.type === "stream.message") {
     const message = event.payload.message as any;
@@ -58,6 +78,50 @@ function emit(event: ServerEvent) {
 
   // Route event through SessionManager
   sessionManager.emit(event, broadcast);
+}
+
+// Check if all threads in a multi-thread task are completed
+function checkAndUpdateMultiThreadTaskStatus(sessionId: string, emitFn: (event: ServerEvent) => void) {
+  // Find which task contains this session
+  for (const [taskId, task] of multiThreadTasks.entries()) {
+    if (!task.threadIds.includes(sessionId)) continue;
+
+    // Get status of all threads in this task
+    const threadStatuses = task.threadIds.map(id => {
+      const thread = sessions.getSession(id);
+      return thread?.status || 'idle';
+    });
+
+    // Count threads by status
+    const total = threadStatuses.length;
+    const completed = threadStatuses.filter(s => s === 'completed').length;
+    const error = threadStatuses.filter(s => s === 'error').length;
+    const running = threadStatuses.filter(s => s === 'running').length;
+
+    // Determine task status
+    let newStatus: 'running' | 'completed' | 'error' = task.status;
+
+    if (running === 0) {
+      // All threads stopped - check if completed or had errors
+      if (error > 0) {
+        newStatus = 'error';
+      } else if (completed === total) {
+        newStatus = 'completed';
+      }
+    }
+
+    // Emit task status update if changed
+    if (newStatus !== task.status) {
+      task.status = newStatus;
+      task.updatedAt = Date.now();
+      emitFn({
+        type: "task.status",
+        payload: { taskId, status: newStatus }
+      });
+      console.log(`[IPC] Task ${taskId} status updated to ${newStatus} (${completed}/${total} completed, ${error} errors)`);
+    }
+    break;
+  }
 }
 
 export function handleClientEvent(event: ClientEvent, windowId: number) {
@@ -92,7 +156,9 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
         messages: history.messages,
         inputTokens: history.session.inputTokens,
         outputTokens: history.session.outputTokens,
-        todos: history.todos || []
+        todos: history.todos || [],
+        model: history.session.model,
+        fileChanges: history.fileChanges || []
       }
     });
     return;
@@ -103,7 +169,8 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
       cwd: event.payload.cwd,
       title: event.payload.title,
       allowedTools: event.payload.allowedTools,
-      prompt: event.payload.prompt
+      prompt: event.payload.prompt,
+      model: event.payload.model
     });
 
     // Subscribe this window to the session
@@ -117,7 +184,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
       });
       sessionManager.emitToWindow(windowId, {
         type: "session.status",
-        payload: { sessionId: session.id, status: "idle", title: session.title, cwd: session.cwd }
+        payload: { sessionId: session.id, status: "idle", title: session.title, cwd: session.cwd, model: session.model }
       });
       return;
     }
@@ -129,7 +196,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
     });
     sessionManager.emitToWindow(windowId, {
       type: "session.status",
-      payload: { sessionId: session.id, status: "running", title: session.title, cwd: session.cwd }
+      payload: { sessionId: session.id, status: "running", title: session.title, cwd: session.cwd, model: session.model }
     });
 
     // Use emit() to save user_prompt to DB AND send to UI
@@ -160,6 +227,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
             status: "error",
             title: session.title,
             cwd: session.cwd,
+            model: session.model,
             error: String(error)
           }
         });
@@ -194,7 +262,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
             sessions.updateSession(session.id, { title: newTitle });
             emit({
               type: "session.status",
-              payload: { sessionId: session.id, status: session.status, title: newTitle, cwd: session.cwd }
+              payload: { sessionId: session.id, status: session.status, title: newTitle, cwd: session.cwd, model: session.model }
             });
           }
         })
@@ -206,7 +274,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
     sessions.updateSession(session.id, { status: "running", lastPrompt: event.payload.prompt });
     sessionManager.emitToWindow(windowId, {
       type: "session.status",
-      payload: { sessionId: session.id, status: "running", title: sessionTitle, cwd: session.cwd }
+      payload: { sessionId: session.id, status: "running", title: sessionTitle, cwd: session.cwd, model: session.model }
     });
 
     // Use emit() to save user_prompt to DB AND send to UI
@@ -236,6 +304,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
             status: "error",
             title: session.title,
             cwd: session.cwd,
+            model: session.model,
             error: String(error)
           }
         });
@@ -257,7 +326,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
     sessions.updateSession(session.id, { status: "idle" });
     sessionManager.emitToWindow(windowId, {
       type: "session.status",
-      payload: { sessionId: session.id, status: "idle", title: session.title, cwd: session.cwd }
+      payload: { sessionId: session.id, status: "idle", title: session.title, cwd: session.cwd, model: session.model }
     });
     return;
   }
@@ -301,7 +370,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
       // Use emit to route only to subscribed windows
       emit({
         type: "session.status",
-        payload: { sessionId: session.id, status: session.status, title: session.title, cwd: session.cwd }
+        payload: { sessionId: session.id, status: session.status, title: session.title, cwd: session.cwd, model: session.model }
       });
     }
     return;
@@ -355,7 +424,8 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
           sessionId: updatedHistory.session.id,
           status: updatedHistory.session.status,
           messages: updatedHistory.messages,
-          todos: updatedHistory.todos || []
+          todos: updatedHistory.todos || [],
+          model: updatedHistory.session.model
         }
       });
     }
@@ -366,7 +436,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
     // Emit status update
     emit({
       type: "session.status",
-      payload: { sessionId: session.id, status: "running", title: session.title, cwd: session.cwd }
+      payload: { sessionId: session.id, status: "running", title: session.title, cwd: session.cwd, model: session.model }
     });
 
     // Re-run from this point
@@ -391,6 +461,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
             status: "error",
             title: session.title,
             cwd: session.cwd,
+            model: session.model,
             error: String(error)
           }
         });
@@ -441,6 +512,281 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
         type: "models.error",
         payload: { message: String(error) }
       });
+    });
+    return;
+  }
+
+  if (event.type === "thread.list") {
+    const { sessionId } = event.payload;
+    const threads = sessions.getThreads(sessionId);
+    sessionManager.emitToWindow(windowId, {
+      type: "thread.list",
+      payload: { sessionId, threads }
+    });
+    return;
+  }
+
+  if (event.type === "task.delete") {
+    const { taskId } = event.payload;
+    const task = multiThreadTasks.get(taskId);
+
+    if (task) {
+      // Delete all associated sessions
+      for (const threadId of task.threadIds) {
+        const handle = runnerHandles.get(threadId);
+        if (handle) {
+          handle.abort();
+          runnerHandles.delete(threadId);
+        }
+        sessions.deleteSession(threadId);
+      }
+
+      // Remove task from memory
+      multiThreadTasks.delete(taskId);
+
+      // Emit deleted event
+      broadcast({
+        type: "task.deleted",
+        payload: { taskId }
+      });
+    }
+    return;
+  }
+
+  if (event.type === "task.create") {
+    const payload = event.payload;
+    const { mode, title, cwd, allowedTools, shareWebCache } = payload;
+
+    // Clear web cache if sharing is disabled
+    if (!shareWebCache) {
+      webCache.clear();
+    }
+
+    const createdThreads: Array<{ threadId: string; model: string; status: "idle" | "running" | "completed" | "error"; createdAt: number; updatedAt: number }> = [];
+    const threadIds: string[] = [];
+    const now = Date.now();
+
+    if (mode === 'consensus') {
+      // Create N threads with the same model and prompt
+      const consensusModel = payload.consensusModel || 'gpt-4';
+      const quantity = payload.consensusQuantity || 5;
+      const consensusPrompt = (payload as any).consensusPrompt || '';
+
+      for (let i = 0; i < quantity; i++) {
+        const threadTitle = `${title} [${i + 1}/${quantity}]`;
+
+        const thread = sessions.createSession({
+          title: threadTitle,
+          cwd,
+          allowedTools,
+          prompt: consensusPrompt,
+          model: consensusModel,
+          threadId: `thread-${i + 1}`
+        });
+
+        threadIds.push(thread.id);
+
+        createdThreads.push({
+          threadId: thread.id,
+          model: consensusModel,
+          status: thread.status,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Start the thread with the prompt
+        if (consensusPrompt && consensusPrompt.trim() !== '') {
+          sessions.updateSession(thread.id, { status: "running", lastPrompt: consensusPrompt });
+          emit({
+            type: "stream.user_prompt",
+            payload: { sessionId: thread.id, threadId: thread.id, prompt: consensusPrompt }
+          });
+
+          runClaude({
+            prompt: consensusPrompt,
+            session: thread,
+            resumeSessionId: thread.claudeSessionId,
+            onEvent: emit,
+            onSessionUpdate: (updates) => {
+              sessions.updateSession(thread.id, updates);
+            }
+          })
+            .then((handle) => {
+              runnerHandles.set(thread.id, handle);
+              sessions.setAbortController(thread.id, undefined);
+
+              // Check if this is the last thread and auto-summary is enabled
+              if (i === quantity - 1 && payload.autoSummary) {
+                // TODO: Create summary thread after all threads complete
+                console.log('[IPC] All consensus threads completed, creating summary...');
+              }
+            })
+            .catch((error) => {
+              sessions.updateSession(thread.id, { status: "error" });
+              emit({
+                type: "runner.error",
+                payload: { sessionId: thread.id, message: String(error) }
+              });
+            });
+        }
+      }
+    } else if (mode === 'different_tasks' && payload.tasks) {
+      // Create threads with different models and tasks
+      const tasks = payload.tasks as ThreadTask[];
+
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
+        const threadTitle = `${title} [${i + 1}/${tasks.length}]`;
+
+        const thread = sessions.createSession({
+          title: threadTitle,
+          cwd,
+          allowedTools,
+          prompt: task.prompt,
+          model: task.model,
+          threadId: `thread-${i + 1}`
+        });
+
+        threadIds.push(thread.id);
+
+        createdThreads.push({
+          threadId: thread.id,
+          model: task.model,
+          status: thread.status,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Start the thread with its prompt
+        if (task.prompt && task.prompt.trim() !== '') {
+          sessions.updateSession(thread.id, { status: "running", lastPrompt: task.prompt });
+          emit({
+            type: "stream.user_prompt",
+            payload: { sessionId: thread.id, threadId: thread.id, prompt: task.prompt }
+          });
+
+          runClaude({
+            prompt: task.prompt,
+            session: thread,
+            resumeSessionId: thread.claudeSessionId,
+            onEvent: emit,
+            onSessionUpdate: (updates) => {
+              sessions.updateSession(thread.id, updates);
+            }
+          })
+            .then((handle) => {
+              runnerHandles.set(thread.id, handle);
+              sessions.setAbortController(thread.id, undefined);
+            })
+            .catch((error) => {
+              sessions.updateSession(thread.id, { status: "error" });
+              emit({
+                type: "runner.error",
+                payload: { sessionId: thread.id, message: String(error) }
+              });
+            });
+        }
+      }
+    }
+
+    // Create MultiThreadTask object
+    const taskId = `task-${now}`;
+    const task = {
+      id: taskId,
+      title,
+      mode,
+      createdAt: now,
+      updatedAt: now,
+      status: 'running' as const,
+      threadIds,
+      shareWebCache,
+      consensusModel: payload.consensusModel,
+      consensusQuantity: payload.consensusQuantity,
+      consensusPrompt: (payload as any).consensusPrompt,
+      autoSummary: payload.autoSummary,
+      tasks: payload.tasks
+    };
+
+    // Emit task.created event with task object and created threads
+    sessionManager.emitToWindow(windowId, {
+      type: "task.created",
+      payload: { task, threads: createdThreads }
+    });
+    return;
+  }
+
+  if (event.type === "file_changes.confirm") {
+    const { sessionId } = event.payload;
+    const session = sessions.getSession(sessionId);
+
+    if (!session) {
+      sessionManager.emitToWindow(windowId, {
+        type: "file_changes.error",
+        payload: { sessionId, message: "Session not found" }
+      });
+      return;
+    }
+
+    // Mark all file changes as confirmed
+    sessions.confirmFileChanges(sessionId);
+
+    // Emit confirmation event
+    emit({
+      type: "file_changes.confirmed",
+      payload: { sessionId }
+    });
+    return;
+  }
+
+  if (event.type === "file_changes.rollback") {
+    const { sessionId } = event.payload;
+    const session = sessions.getSession(sessionId);
+
+    if (!session || !session.cwd) {
+      sessionManager.emitToWindow(windowId, {
+        type: "file_changes.error",
+        payload: { sessionId, message: "Session not found or no working directory" }
+      });
+      return;
+    }
+
+    // Check if this is a git repository
+    if (!gitUtils.isGitRepo(session.cwd)) {
+      sessionManager.emitToWindow(windowId, {
+        type: "file_changes.error",
+        payload: { sessionId, message: "Not a git repository" }
+      });
+      return;
+    }
+
+    // Get pending file changes (status: pending)
+    const allChanges = sessions.getFileChanges(sessionId);
+    const pendingChanges = allChanges.filter(c => c.status === 'pending');
+
+    if (pendingChanges.length === 0) {
+      sessionManager.emitToWindow(windowId, {
+        type: "file_changes.error",
+        payload: { sessionId, message: "No pending changes to rollback" }
+      });
+      return;
+    }
+
+    // Rollback all pending files using git checkout
+    const filePaths = pendingChanges.map(c => c.path);
+    const { succeeded, failed } = gitUtils.checkoutFiles(filePaths, session.cwd);
+
+    if (failed.length > 0) {
+      console.warn(`Failed to checkout files: ${failed.join(', ')}`);
+    }
+
+    // Clear file changes from database
+    sessions.clearFileChanges(sessionId);
+
+    // Emit rollback event with remaining changes (failed ones)
+    const remainingChanges = allChanges.filter(c => failed.includes(c.path));
+    emit({
+      type: "file_changes.rolledback",
+      payload: { sessionId, fileChanges: remainingChanges }
     });
     return;
   }

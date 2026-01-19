@@ -5,12 +5,14 @@ import { useAppStore } from "./store/useAppStore";
 import type { ServerEvent, ApiSettings } from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { StartSessionModal } from "./components/StartSessionModal";
+import { TaskDialog } from "./components/TaskDialog";
 import { SettingsModal } from "./components/SettingsModal";
 import { FileBrowser } from "./components/FileBrowser";
 import { PromptInput, usePromptActions } from "./components/PromptInput";
 import { MessageCard } from "./components/EventCard";
 import { AppFooter } from "./components/AppFooter";
 import { TodoPanel } from "./components/TodoPanel";
+import { MultiThreadPanel } from "./components/MultiThreadPanel";
 import MDContent from "./render/markdown";
 
 function App() {
@@ -22,9 +24,13 @@ function App() {
   const isUserScrolledUpRef = useRef(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [apiSettings, setApiSettings] = useState<ApiSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings have been loaded from backend
   const partialUpdateScheduledRef = useRef(false);
+  const selectedModel = useAppStore((s) => s.selectedModel);
+  const setSelectedModel = useAppStore((s) => s.setSelectedModel);
+  const availableModels = useAppStore((s) => s.availableModels);
 
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -113,11 +119,14 @@ function App() {
   const messages = activeSession?.messages ?? [];
   const permissionRequests = activeSession?.permissionRequests ?? [];
   const isRunning = activeSession?.status === "running";
+  const multiThreadTasks = useAppStore((s) => s.multiThreadTasks);
+  const deleteMultiThreadTask = useAppStore((s) => s.deleteMultiThreadTask);
 
   useEffect(() => {
     if (connected) {
       sendEvent({ type: "session.list" });
       sendEvent({ type: "settings.get" });
+      sendEvent({ type: "models.get" });
     }
   }, [connected, sendEvent]);
 
@@ -254,6 +263,19 @@ function App() {
     setApiSettings(settings);
   }, [sendEvent]);
 
+  const handleConfirmChanges = useCallback((sessionId: string) => {
+    sendEvent({ type: "file_changes.confirm", payload: { sessionId } });
+  }, [sendEvent]);
+
+  const handleRollbackChanges = useCallback((sessionId: string) => {
+    sendEvent({ type: "file_changes.rollback", payload: { sessionId } });
+  }, [sendEvent]);
+
+  const handleCreateTask = useCallback((payload: any) => {
+    sendEvent({ type: "task.create", payload });
+    setShowTaskDialog(false);
+  }, [sendEvent]);
+
   return (
     <div className="flex h-screen bg-surface">
       <Sidebar
@@ -261,6 +283,8 @@ function App() {
         onNewSession={handleNewSession}
         onDeleteSession={handleDeleteSession}
         onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenTaskDialog={() => setShowTaskDialog(true)}
+        apiSettings={apiSettings}
       />
 
       <main className="flex flex-1 flex-col ml-[280px] bg-surface-cream overflow-hidden">
@@ -269,13 +293,13 @@ function App() {
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           <div className="flex items-center gap-2 flex-shrink-0">
-            {apiSettings?.model && (
+            {(activeSession?.model || apiSettings?.model) && (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-info/10 border border-info/20">
                 <svg className="w-3.5 h-3.5 text-info flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M13 7H7v6h6V7z"/>
                   <path fillRule="evenodd" d="M7 2a1 1 0 012 0v1h2V2a1 1 0 112 0v1h2a2 2 0 012 2v2h1a1 1 0 110 2h-1v2h1a1 1 0 110 2h-1v2a2 2 0 01-2 2h-2v1a1 1 0 11-2 0v-1H9v1a1 1 0 11-2 0v-1H5a2 2 0 01-2-2v-2H2a1 1 0 110-2h1V9H2a1 1 0 010-2h1V5a2 2 0 012-2h2V2zM5 5h10v10H5V5z" clipRule="evenodd"/>
                 </svg>
-                <span className="text-xs font-medium text-info truncate max-w-[150px]">{apiSettings.model}</span>
+                <span className="text-xs font-medium text-info truncate max-w-[150px]">{activeSession?.model || apiSettings?.model}</span>
               </div>
             )}
           </div>
@@ -385,6 +409,10 @@ function App() {
                   permissionRequest={permissionRequests[0]}
                   onPermissionResult={handlePermissionResult}
                   onEditMessage={handleEditMessage}
+                  fileChanges={activeSession?.fileChanges}
+                  sessionId={activeSessionId || undefined}
+                  onConfirmChanges={handleConfirmChanges}
+                  onRollbackChanges={handleRollbackChanges}
                 />
               ))
             )}
@@ -417,10 +445,24 @@ function App() {
           </div>
         </div>
 
+        {/* Multi-Thread Tasks Panel */}
+        <MultiThreadPanel
+          multiThreadTasks={multiThreadTasks}
+          sessions={sessions as any}
+          onSelectSession={(sessionId) => setActiveSessionId(sessionId)}
+          onDeleteTask={deleteMultiThreadTask}
+        />
+
         {/* Todo Panel - fixed above input */}
         {activeSession?.todos && activeSession.todos.length > 0 && (
           <div className="flex-shrink-0 px-4 pb-2 mx-auto w-full max-w-4xl" style={{ marginBottom: '120px' }}>
-            <TodoPanel todos={activeSession.todos} />
+            <TodoPanel
+              todos={activeSession.todos}
+              fileChanges={activeSession.fileChanges}
+              activeSessionId={activeSessionId}
+              onConfirmChanges={handleConfirmChanges}
+              onRollbackChanges={handleRollbackChanges}
+            />
           </div>
         )}
 
@@ -436,6 +478,20 @@ function App() {
           onPromptChange={setPrompt}
           onStart={handleStartFromModal}
           onClose={() => setShowStartModal(false)}
+          apiSettings={apiSettings}
+          availableModels={availableModels}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+        />
+      )}
+
+      {showTaskDialog && (
+        <TaskDialog
+          cwd={cwd}
+          onClose={() => setShowTaskDialog(false)}
+          onCreateTask={handleCreateTask}
+          apiSettings={apiSettings}
+          availableModels={availableModels}
         />
       )}
 

@@ -10,6 +10,8 @@ import type { StreamMessage } from "../types";
 import type { PermissionRequest } from "../store/useAppStore";
 import MDContent from "../render/markdown";
 import { DecisionPanel } from "./DecisionPanel";
+import { ChangedFiles, type ChangedFile } from "./ChangedFiles";
+import type { FileChange } from "../types";
 
 type MessageContent = SDKAssistantMessage["message"]["content"][number];
 type ToolResultContent = SDKUserMessage["message"]["content"][number];
@@ -67,13 +69,44 @@ const StatusDot = ({ variant = "accent", isActive = false, isVisible = true }: {
   );
 };
 
-const SessionResult = ({ message }: { message: SDKResultMessage }) => {
+// ChangedFilesPanel is now replaced by the ChangedFiles component from ./ChangedFiles.tsx
+
+const SessionResult = ({ message, fileChanges, sessionId, onConfirmChanges, onRollbackChanges }: {
+  message: SDKResultMessage;
+  fileChanges?: FileChange[];
+  sessionId?: string;
+  onConfirmChanges?: (sessionId: string) => void;
+  onRollbackChanges?: (sessionId: string) => void;
+}) => {
   const formatMinutes = (ms: number | undefined) => typeof ms !== "number" ? "-" : `${(ms / 60000).toFixed(2)} min`;
   const formatUsd = (usd: number | undefined) => typeof usd !== "number" ? "-" : usd.toFixed(2);
   const formatMillions = (tokens: number | undefined) => typeof tokens !== "number" ? "-" : `${(tokens / 1_000_000).toFixed(3)}m`;
-  
+
   // Always hide cost display - not relevant for local models and confusing for users
   const hasCost = false;
+
+  // Convert FileChange[] to ChangedFile[] format
+  const changedFiles: ChangedFile[] = (fileChanges || []).map(fc => ({
+    file_path: fc.path,
+    lines_added: fc.additions,
+    lines_removed: fc.deletions,
+    content_old: fc.diff, // Using diff field as old content reference
+    content_new: undefined, // Could store new content separately
+  }));
+
+  const handleViewDiff = (file: ChangedFile) => {
+    // Open diff view for the file
+    console.log('View diff for:', file.file_path);
+    // TODO: Implement diff viewer modal or panel
+  };
+
+  const handleApply = () => {
+    onConfirmChanges?.(sessionId!);
+  };
+
+  const handleReject = () => {
+    onRollbackChanges?.(sessionId!);
+  };
 
   return (
     <div className="flex flex-col gap-2 mt-4">
@@ -96,6 +129,13 @@ const SessionResult = ({ message }: { message: SDKResultMessage }) => {
           )}
         </div>
       </div>
+      {/* Always show changed files after Session Result using new ChangedFiles component */}
+      <ChangedFiles
+        files={changedFiles}
+        onApply={fileChanges?.some(f => f.status === 'pending') ? handleApply : undefined}
+        onReject={fileChanges?.some(f => f.status === 'pending') ? handleReject : undefined}
+        onViewDiff={handleViewDiff}
+      />
     </div>
   );
 };
@@ -416,7 +456,11 @@ export function MessageCard({
   permissionRequest,
   onPermissionResult,
   onEditMessage,
-  messageIndex
+  messageIndex,
+  fileChanges,
+  sessionId,
+  onConfirmChanges,
+  onRollbackChanges
 }: {
   message: StreamMessage;
   isLast?: boolean;
@@ -425,6 +469,10 @@ export function MessageCard({
   onPermissionResult?: (toolUseId: string, result: PermissionResult) => void;
   onEditMessage?: (messageIndex: number, newPrompt: string) => void;
   messageIndex?: number;
+  fileChanges?: FileChange[];
+  sessionId?: string;
+  onConfirmChanges?: (sessionId: string) => void;
+  onRollbackChanges?: (sessionId: string) => void;
 }) {
   const showIndicator = isLast && isRunning;
 
@@ -447,7 +495,7 @@ export function MessageCard({
 
   if (sdkMessage.type === "result") {
     if (sdkMessage.subtype === "success") {
-      return <SessionResult message={sdkMessage} />;
+      return <SessionResult message={sdkMessage} fileChanges={fileChanges} sessionId={sessionId} onConfirmChanges={onConfirmChanges} onRollbackChanges={onRollbackChanges} />;
     }
     return (
       <div className="flex flex-col gap-2 mt-4">

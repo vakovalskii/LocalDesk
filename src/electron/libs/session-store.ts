@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { SessionStatus, StreamMessage } from "../types.js";
+import type { SessionStatus, StreamMessage, FileChange } from "../types.js";
 
 export type PendingPermission = {
   toolUseId: string;
@@ -16,8 +16,13 @@ export type Session = {
   cwd?: string;
   allowedTools?: string;
   lastPrompt?: string;
+  model?: string;
+  threadId?: string; // Thread ID for multi-thread sessions
+  fileChanges?: FileChange[];
   pendingPermissions: Map<string, PendingPermission>;
   abortController?: AbortController;
+  inputTokens?: number;
+  outputTokens?: number;
 };
 
 export type StoredSession = {
@@ -27,12 +32,15 @@ export type StoredSession = {
   cwd?: string;
   allowedTools?: string;
   lastPrompt?: string;
+  model?: string;
+  threadId?: string; // Thread ID for multi-thread sessions
   claudeSessionId?: string;
   isPinned?: boolean;
   createdAt: number;
   updatedAt: number;
   inputTokens?: number;
   outputTokens?: number;
+  fileChanges?: FileChange[];
 };
 
 export type TodoItem = {
@@ -47,6 +55,7 @@ export type SessionHistory = {
   session: StoredSession;
   messages: StreamMessage[];
   todos: TodoItem[];
+  fileChanges?: FileChange[];
 };
 
 export class SessionStore {
@@ -59,7 +68,7 @@ export class SessionStore {
     this.loadSessions();
   }
 
-  createSession(options: { cwd?: string; allowedTools?: string; prompt?: string; title: string }): Session {
+  createSession(options: { cwd?: string; allowedTools?: string; prompt?: string; title: string; model?: string; threadId?: string }): Session {
     const id = crypto.randomUUID();
     const now = Date.now();
     const session: Session = {
@@ -69,14 +78,16 @@ export class SessionStore {
       cwd: options.cwd,
       allowedTools: options.allowedTools,
       lastPrompt: options.prompt,
+      model: options.model,
+      threadId: options.threadId,
       pendingPermissions: new Map()
     };
     this.sessions.set(id, session);
     this.db
       .prepare(
         `insert into sessions
-          (id, title, claude_session_id, status, cwd, allowed_tools, last_prompt, created_at, updated_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          (id, title, claude_session_id, status, cwd, allowed_tools, last_prompt, model, thread_id, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -86,6 +97,8 @@ export class SessionStore {
         session.cwd ?? null,
         session.allowedTools ?? null,
         session.lastPrompt ?? null,
+        session.model ?? null,
+        session.threadId ?? null,
         now,
         now
       );
@@ -99,7 +112,7 @@ export class SessionStore {
   listSessions(): StoredSession[] {
     const rows = this.db
       .prepare(
-        `select id, title, claude_session_id, status, cwd, allowed_tools, last_prompt, is_pinned, created_at, updated_at, input_tokens, output_tokens
+        `select id, title, claude_session_id, status, cwd, allowed_tools, last_prompt, model, thread_id, is_pinned, created_at, updated_at, input_tokens, output_tokens
          from sessions
          order by updated_at desc`
       )
@@ -111,6 +124,8 @@ export class SessionStore {
       cwd: row.cwd ? String(row.cwd) : undefined,
       allowedTools: row.allowed_tools ? String(row.allowed_tools) : undefined,
       lastPrompt: row.last_prompt ? String(row.last_prompt) : undefined,
+      model: row.model ? String(row.model) : undefined,
+      threadId: row.thread_id ? String(row.thread_id) : undefined,
       claudeSessionId: row.claude_session_id ? String(row.claude_session_id) : undefined,
       isPinned: row.is_pinned ? Boolean(row.is_pinned) : false,
       createdAt: Number(row.created_at),
@@ -134,14 +149,17 @@ export class SessionStore {
     return rows.map((row) => String(row.cwd));
   }
 
-  getSessionHistory(id: string): SessionHistory | null {
+  getSessionHistory(id: string, threadId?: string): SessionHistory | null {
+    const whereClause = threadId ? `where id = ? and thread_id = ?` : `where id = ?`;
+    const params = threadId ? [id, threadId] : [id];
+
     const sessionRow = this.db
       .prepare(
-        `select id, title, claude_session_id, status, cwd, allowed_tools, last_prompt, is_pinned, created_at, updated_at, input_tokens, output_tokens, todos
+        `select id, title, claude_session_id, status, cwd, allowed_tools, last_prompt, model, thread_id, is_pinned, created_at, updated_at, input_tokens, output_tokens, todos, file_changes
          from sessions
-         where id = ?`
+         ${whereClause}`
       )
-      .get(id) as Record<string, unknown> | undefined;
+      .get(...params) as Record<string, unknown> | undefined;
     if (!sessionRow) return null;
 
     const messages = (this.db
@@ -161,6 +179,16 @@ export class SessionStore {
       }
     }
 
+    // Parse fileChanges from JSON
+    let fileChanges: FileChange[] = [];
+    if (sessionRow.file_changes) {
+      try {
+        fileChanges = JSON.parse(String(sessionRow.file_changes)) as FileChange[];
+      } catch (e) {
+        console.error('Failed to parse fileChanges:', e);
+      }
+    }
+
     return {
       session: {
         id: String(sessionRow.id),
@@ -169,16 +197,45 @@ export class SessionStore {
         cwd: sessionRow.cwd ? String(sessionRow.cwd) : undefined,
         allowedTools: sessionRow.allowed_tools ? String(sessionRow.allowed_tools) : undefined,
         lastPrompt: sessionRow.last_prompt ? String(sessionRow.last_prompt) : undefined,
+        model: sessionRow.model ? String(sessionRow.model) : undefined,
+        threadId: sessionRow.thread_id ? String(sessionRow.thread_id) : undefined,
         claudeSessionId: sessionRow.claude_session_id ? String(sessionRow.claude_session_id) : undefined,
         isPinned: sessionRow.is_pinned ? Boolean(sessionRow.is_pinned) : false,
         createdAt: Number(sessionRow.created_at),
         updatedAt: Number(sessionRow.updated_at),
         inputTokens: sessionRow.input_tokens ? Number(sessionRow.input_tokens) : undefined,
-        outputTokens: sessionRow.output_tokens ? Number(sessionRow.output_tokens) : undefined
+        outputTokens: sessionRow.output_tokens ? Number(sessionRow.output_tokens) : undefined,
+        fileChanges
       },
       messages,
-      todos
+      todos,
+      fileChanges
     };
+  }
+
+  /**
+   * Get all threads for a session (by session ID without threadId)
+   * Returns an array of threads grouped by a common session ID
+   */
+  getThreads(sessionId: string): Array<{ threadId: string; model: string; status: SessionStatus; createdAt: number; updatedAt: number }> {
+    // For now, sessions with thread_id are considered threads of a "parent" session
+    // The parent session has thread_id = null or undefined
+    const rows = this.db
+      .prepare(
+        `select id as thread_id, model, status, created_at, updated_at
+         from sessions
+         where id = ? or id like ? || '-%'
+         order by created_at asc`
+      )
+      .all(sessionId, sessionId) as Array<Record<string, unknown>>;
+
+    return rows.map((row) => ({
+      threadId: String(row.thread_id),
+      model: row.model ? String(row.model) : 'unknown',
+      status: row.status as SessionStatus,
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at)
+    }));
   }
 
   saveTodos(sessionId: string, todos: TodoItem[]): void {
@@ -197,6 +254,58 @@ export class SessionStore {
     } catch {
       return [];
     }
+  }
+
+  saveFileChanges(sessionId: string, fileChanges: FileChange[]): void {
+    this.db
+      .prepare(`update sessions set file_changes = ?, updated_at = ? where id = ?`)
+      .run(JSON.stringify(fileChanges), Date.now(), sessionId);
+  }
+
+  getFileChanges(sessionId: string): FileChange[] {
+    const row = this.db
+      .prepare(`select file_changes from sessions where id = ?`)
+      .get(sessionId) as { file_changes: string | null } | undefined;
+    if (!row?.file_changes) return [];
+    try {
+      return JSON.parse(row.file_changes) as FileChange[];
+    } catch {
+      return [];
+    }
+  }
+
+  addFileChanges(sessionId: string, newChanges: FileChange[]): void {
+    const currentChanges = this.getFileChanges(sessionId);
+    const changesMap = new Map<string, FileChange>();
+
+    // Add current changes to map
+    for (const change of currentChanges) {
+      changesMap.set(change.path, change);
+    }
+
+    // Add/update new changes
+    for (const newChange of newChanges) {
+      const existing = changesMap.get(newChange.path);
+      if (existing) {
+        // Update stats
+        existing.additions += newChange.additions;
+        existing.deletions += newChange.deletions;
+      } else {
+        changesMap.set(newChange.path, { ...newChange });
+      }
+    }
+
+    this.saveFileChanges(sessionId, Array.from(changesMap.values()));
+  }
+
+  confirmFileChanges(sessionId: string): void {
+    const changes = this.getFileChanges(sessionId);
+    const confirmedChanges = changes.map(c => ({ ...c, status: 'confirmed' as const }));
+    this.saveFileChanges(sessionId, confirmedChanges);
+  }
+
+  clearFileChanges(sessionId: string): void {
+    this.saveFileChanges(sessionId, []);
   }
 
   updateSession(id: string, updates: Partial<Session>): Session | undefined {
@@ -285,9 +394,18 @@ export class SessionStore {
   }
 
   updateTokens(id: string, inputTokens: number, outputTokens: number): void {
+    // Сначала получаем текущие значения токенов из базы
+    const current = this.db
+      .prepare(`select input_tokens, output_tokens from sessions where id = ?`)
+      .get(id) as { input_tokens: number | null; output_tokens: number | null } | undefined;
+
+    const currentInput = current?.input_tokens ?? 0;
+    const currentOutput = current?.output_tokens ?? 0;
+
+    // Прибавляем новые токены к текущим значениям
     this.db
       .prepare(`update sessions set input_tokens = ?, output_tokens = ?, updated_at = ? where id = ?`)
-      .run(inputTokens, outputTokens, Date.now(), id);
+      .run(currentInput + inputTokens, currentOutput + outputTokens, Date.now(), id);
   }
 
   private persistSession(id: string, updates: Partial<Session>): void {
@@ -299,7 +417,9 @@ export class SessionStore {
       status: "status",
       cwd: "cwd",
       allowedTools: "allowed_tools",
-      lastPrompt: "last_prompt"
+      lastPrompt: "last_prompt",
+      model: "model",
+      threadId: "thread_id"
     } as const;
 
     for (const key of Object.keys(updates) as Array<keyof typeof updatable>) {
@@ -334,7 +454,10 @@ export class SessionStore {
         created_at integer not null,
         updated_at integer not null,
         input_tokens integer default 0,
-        output_tokens integer default 0
+        output_tokens integer default 0,
+        todos text,
+        model text,
+        thread_id text
       )`
     );
     this.db.exec(
@@ -347,28 +470,28 @@ export class SessionStore {
       )`
     );
     this.db.exec(`create index if not exists messages_session_id on messages(session_id)`);
-    
+
     // Migration: Add is_pinned column if it doesn't exist
     try {
       this.db.exec(`alter table sessions add column is_pinned integer default 0`);
     } catch (e) {
       // Column already exists, ignore
     }
-    
+
     // Migration: Add input_tokens column if it doesn't exist
     try {
       this.db.exec(`alter table sessions add column input_tokens integer default 0`);
     } catch (e) {
       // Column already exists, ignore
     }
-    
+
     // Migration: Add output_tokens column if it doesn't exist
     try {
       this.db.exec(`alter table sessions add column output_tokens integer default 0`);
     } catch (e) {
       // Column already exists, ignore
     }
-    
+
     // Migration: Add todos column if it doesn't exist
     try {
       this.db.exec(`alter table sessions add column todos text`);
@@ -393,12 +516,33 @@ export class SessionStore {
     );
     this.db.exec(`create index if not exists scheduled_tasks_next_run on scheduled_tasks(next_run)`);
     this.db.exec(`create index if not exists scheduled_tasks_enabled on scheduled_tasks(enabled)`);
+
+    // Migration: Add model column if it doesn't exist
+    try {
+      this.db.exec(`alter table sessions add column model text`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Migration: Add file_changes column if it doesn't exist
+    try {
+      this.db.exec(`alter table sessions add column file_changes text`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
+
+    // Migration: Add thread_id column if it doesn't exist
+    try {
+      this.db.exec(`alter table sessions add column thread_id text`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
   }
 
   private loadSessions(): void {
     const rows = this.db
       .prepare(
-        `select id, title, claude_session_id, status, cwd, allowed_tools, last_prompt
+        `select id, title, claude_session_id, status, cwd, allowed_tools, last_prompt, model, thread_id
          from sessions`
       )
       .all();
@@ -411,6 +555,8 @@ export class SessionStore {
         cwd: row.cwd ? String(row.cwd) : undefined,
         allowedTools: row.allowed_tools ? String(row.allowed_tools) : undefined,
         lastPrompt: row.last_prompt ? String(row.last_prompt) : undefined,
+        model: row.model ? String(row.model) : undefined,
+        threadId: row.thread_id ? String(row.thread_id) : undefined,
         pendingPermissions: new Map()
       };
       this.sessions.set(session.id, session);

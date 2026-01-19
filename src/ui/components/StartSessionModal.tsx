@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import type { ApiSettings } from "../types";
 
 interface StartSessionModalProps {
   cwd: string;
@@ -8,6 +10,10 @@ interface StartSessionModalProps {
   onPromptChange: (value: string) => void;
   onStart: () => void;
   onClose: () => void;
+  apiSettings: ApiSettings | null;
+  availableModels: Array<{ id: string; name: string; description?: string }>;
+  selectedModel: string | null;
+  onModelChange: (model: string | null) => void;
 }
 
 export function StartSessionModal({
@@ -17,7 +23,11 @@ export function StartSessionModal({
   onCwdChange,
   onPromptChange,
   onStart,
-  onClose
+  onClose,
+  apiSettings,
+  availableModels,
+  selectedModel,
+  onModelChange
 }: StartSessionModalProps) {
   const [recentCwds, setRecentCwds] = useState<string[]>([]);
 
@@ -25,24 +35,66 @@ export function StartSessionModal({
     window.electron.getRecentCwds().then(setRecentCwds).catch(console.error);
   }, []);
 
+  // Set default model to apiSettings.model if no model is selected
+  useEffect(() => {
+    if (!selectedModel && apiSettings?.model) {
+      onModelChange(apiSettings.model);
+    }
+  }, [apiSettings, selectedModel, onModelChange]);
+
   const handleSelectDirectory = async () => {
     const result = await window.electron.selectDirectory();
     if (result) onCwdChange(result);
   };
 
+  const displayModel = selectedModel || apiSettings?.model || "Select model...";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/20 px-4 py-8 backdrop-blur-sm">
       <div className="w-full max-w-lg rounded-2xl border border-ink-900/5 bg-surface p-6 shadow-elevated">
         <div className="flex items-center justify-between">
-          <div className="text-base font-semibold text-ink-800">Start Chat</div>
+          <div className="text-base font-semibold text-ink-800">Start Task</div>
           <button className="rounded-full p-1.5 text-muted hover:bg-surface-tertiary hover:text-ink-700 transition-colors" onClick={onClose} aria-label="Close">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
         </div>
-        <p className="mt-2 text-sm text-muted">Start a new chat session. You can chat without a workspace, but file operations will be disabled.</p>
+        <p className="mt-2 text-sm text-muted">Start a new task session. You can chat without a workspace, but file operations will be disabled.</p>
         <div className="mt-5 grid gap-4">
+          <label className="grid gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted">Model</span>
+            </div>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger className="w-full rounded-xl border border-ink-900/10 bg-surface-secondary px-4 py-2.5 text-sm text-ink-800 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors text-left flex items-center justify-between">
+                <span className="truncate">{displayModel}</span>
+                <svg className="w-4 h-4 text-muted shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="z-50 min-w-[300px] max-w-[400px] rounded-xl border border-ink-900/10 bg-white p-1 shadow-lg max-h-60 overflow-y-auto" sideOffset={8}>
+                  {availableModels.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-muted">No models available. Check your API settings.</div>
+                  ) : (
+                    availableModels.map((model) => (
+                      <DropdownMenu.Item
+                        key={model.id}
+                        className="flex flex-col cursor-pointer rounded-lg px-3 py-2 text-sm text-ink-700 outline-none hover:bg-ink-900/5"
+                        onSelect={() => onModelChange(model.id)}
+                      >
+                        <span className="font-medium truncate">{model.name}</span>
+                        {model.description && (
+                          <span className="text-xs text-muted truncate">{model.description}</span>
+                        )}
+                      </DropdownMenu.Item>
+                    ))
+                  )}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </label>
           <label className="grid gap-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted">Workspace Folder</span>

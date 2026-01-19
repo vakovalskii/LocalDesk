@@ -6,6 +6,7 @@
 import { tavily } from '@tavily/core';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
 import type { WebSearchProvider } from '../../types.js';
+import { webCache } from '../web-cache.js';
 
 export interface ExtractPageParams {
   urls: string[];
@@ -74,33 +75,64 @@ export class ExtractPageContentTool {
       throw new Error('Must provide 1-5 URLs to extract');
     }
 
-    try {
-      const response = await this.tvly.extract(urls);
+    // Check cache for each URL
+    const cachedResults: PageContent[] = [];
+    const urlsToFetch: string[] = [];
 
-      const results: PageContent[] = [];
+    for (const url of urls) {
+      const cacheKey = `extract:tavily:${url}`;
+      const cached = await webCache.get(cacheKey);
+      if (cached && typeof cached === 'object' && 'content' in cached) {
+        console.log(`[ExtractPage] Cache hit for URL: ${url}`);
+        cachedResults.push(cached as PageContent);
+      } else {
+        urlsToFetch.push(url);
+      }
+    }
+
+    // If all URLs were cached, return early
+    if (urlsToFetch.length === 0) {
+      return cachedResults;
+    }
+
+    // Fetch uncached URLs
+    try {
+      const response = await this.tvly.extract(urlsToFetch);
+
+      const results: PageContent[] = [...cachedResults];
 
       // Add successful extractions
       response.results?.forEach((result: any) => {
-        results.push({
+        const pageResult: PageContent = {
           url: result.url,
           content: result.rawContent,
           char_count: result.rawContent.length,
           success: true,
-        });
+        };
+        results.push(pageResult);
+
+        // Cache the result (TTL: 10 minutes)
+        const cacheKey = `extract:tavily:${result.url}`;
+        webCache.set(cacheKey, pageResult, 10 * 60 * 1000);
       });
 
       // Add failed extractions
       response.failedResults?.forEach((failed: any) => {
-        results.push({
+        const pageResult: PageContent = {
           url: failed.url,
           content: '',
           char_count: 0,
           success: false,
           error: failed.error,
-        });
+        };
+        results.push(pageResult);
+
+        // Cache failures too (shorter TTL: 1 minute)
+        const cacheKey = `extract:tavily:${failed.url}`;
+        webCache.set(cacheKey, pageResult, 1 * 60 * 1000);
       });
 
-      console.log(`[ExtractPage] Extracted ${results.filter(r => r.success).length}/${urls.length} pages`);
+      console.log(`[ExtractPage] Extracted ${results.filter(r => r.success).length}/${urls.length} pages (${cachedResults.length} from cache)`);
       return results;
 
     } catch (error) {

@@ -4,6 +4,7 @@
  */
 
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
+import { webCache } from '../web-cache.js';
 
 export interface ZaiReaderParams {
   url: string;
@@ -145,6 +146,16 @@ export class ZaiReaderTool {
 
     console.log(`[ZaiReader] Reading URL: "${url}"`);
 
+    // Check cache first (unless no_cache is true)
+    if (!params.no_cache) {
+      const cacheKey = `reader:zai:${url}`;
+      const cached = await webCache.get(cacheKey);
+      if (cached) {
+        console.log(`[ZaiReader] Cache hit for URL: ${url}`);
+        return cached as ZaiReaderResponse;
+      }
+    }
+
     try {
       const request: ZaiReaderRequest = {
         url,
@@ -176,6 +187,13 @@ export class ZaiReaderTool {
       const data = await response.json() as ZaiReaderResponse;
 
       console.log(`[ZaiReader] Successfully read page. Title: "${data.reader_result?.title || 'N/A'}"`);
+
+      // Cache the result (TTL: 10 minutes)
+      if (!params.no_cache) {
+        const cacheKey = `reader:zai:${url}`;
+        await webCache.set(cacheKey, data, 10 * 60 * 1000);
+      }
+
       return data;
 
     } catch (error) {

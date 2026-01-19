@@ -3,18 +3,23 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { useAppStore } from "../store/useAppStore";
 import { SpinnerIcon } from "./SpinnerIcon";
+import type { ApiSettings } from "../types";
 
 interface SidebarProps {
   connected: boolean;
   onNewSession: () => void;
   onDeleteSession: (sessionId: string) => void;
   onOpenSettings: () => void;
+  onOpenTaskDialog: () => void;
+  apiSettings: ApiSettings | null;
 }
 
 export function Sidebar({
   onNewSession,
   onDeleteSession,
-  onOpenSettings
+  onOpenSettings,
+  onOpenTaskDialog,
+  apiSettings
 }: SidebarProps) {
   const sessions = useAppStore((state) => state.sessions);
   const activeSessionId = useAppStore((state) => state.activeSessionId);
@@ -82,6 +87,13 @@ export function Sidebar({
         >
           + New Task
         </button>
+        <button
+          className="flex-1 rounded-xl border border-accent/30 bg-accent/10 px-4 py-2.5 text-sm font-medium text-accent hover:bg-accent/20 transition-colors"
+          onClick={onOpenTaskDialog}
+          title="Create multi-thread task with multiple models"
+        >
+          🚀 Multi-Thread
+        </button>
 
         <button
           className="flex shrink-0 items-center justify-center gap-2 w-10 h-10 rounded-xl border border-ink-900/10 bg-surface px-2 text-ink-700 hover:bg-surface-tertiary hover:border-ink-900/20 transition-colors"
@@ -147,6 +159,11 @@ export function Sidebar({
                   </div>
                   <div className="flex items-center justify-between mt-0.5 text-xs text-muted">
                     <span className="truncate">{formatCwd(session.cwd)}</span>
+                    {(session.model || apiSettings?.model) && (
+                      <span className="text-[10px] text-info/80 bg-info/10 px-1.5 py-0.5 rounded whitespace-nowrap ml-2">
+                        {session.model || apiSettings?.model}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

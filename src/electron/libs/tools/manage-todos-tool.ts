@@ -79,28 +79,28 @@ export const ManageTodosToolDefinition: ToolDefinition = {
   }
 };
 
-// In-memory storage (will be persisted to session)
-let currentTodos: TodoItem[] = [];
+// In-memory storage keyed by sessionId (for isolation between sessions)
+const sessionTodos = new Map<string, TodoItem[]>();
 
 /**
- * Get current todos
+ * Get todos for a specific session
  */
-export function getTodos(): TodoItem[] {
-  return [...currentTodos];
+export function getTodos(sessionId: string): TodoItem[] {
+  return [...(sessionTodos.get(sessionId) || [])];
 }
 
 /**
  * Set todos from loaded session
  */
-export function setTodos(todos: TodoItem[]): void {
-  currentTodos = todos;
+export function setTodos(sessionId: string, todos: TodoItem[]): void {
+  sessionTodos.set(sessionId, [...todos]);
 }
 
 /**
- * Clear all todos
+ * Clear all todos for a specific session
  */
-export function clearTodos(): void {
-  currentTodos = [];
+export function clearTodos(sessionId: string): void {
+  sessionTodos.delete(sessionId);
 }
 
 /**
@@ -112,10 +112,21 @@ export async function executeManageTodosTool(
 ): Promise<ToolResult> {
   const { action, todos } = args;
   const now = Date.now();
-  
-  console.log(`[manage_todos] Action: ${action}, Items: ${todos?.length || 0}`);
-  
+
+  if (!context.sessionId) {
+    console.error('[manage_todos] No sessionId provided in context');
+    return {
+      success: false,
+      error: '❌ Session ID required for todo management'
+    };
+  }
+
+  console.log(`[manage_todos] Session: ${context.sessionId}, Action: ${action}, Items: ${todos?.length || 0}`);
+
   try {
+    // Get or create todos for this session
+    let currentTodos = sessionTodos.get(context.sessionId) || [];
+
     switch (action) {
       case 'create': {
         if (!todos || todos.length === 0) {
@@ -124,7 +135,7 @@ export async function executeManageTodosTool(
             error: '❌ No todos provided for create action'
           };
         }
-        
+
         // Validate and set new todos
         currentTodos = todos.map(t => ({
           id: t.id,
@@ -133,18 +144,21 @@ export async function executeManageTodosTool(
           createdAt: now,
           updatedAt: now
         }));
-        
+
+        // Store in memory for this session
+        sessionTodos.set(context.sessionId, currentTodos);
+
         // Persist to DB via callback
         if (context.onTodosChanged) {
           context.onTodosChanged(currentTodos);
         }
-        
+
         return {
           success: true,
           output: formatTodosOutput('📋 Todo list created', currentTodos)
         };
       }
-      
+
       case 'update': {
         if (!todos || todos.length === 0) {
           return {
@@ -152,7 +166,7 @@ export async function executeManageTodosTool(
             error: '❌ No todos provided for update action'
           };
         }
-        
+
         // Merge updates into existing todos
         for (const update of todos) {
           const existing = currentTodos.find(t => t.id === update.id);
@@ -171,32 +185,37 @@ export async function executeManageTodosTool(
             });
           }
         }
-        
+
+        // Store updated todos
+        sessionTodos.set(context.sessionId, currentTodos);
+
         // Persist to DB via callback
         if (context.onTodosChanged) {
           context.onTodosChanged(currentTodos);
         }
-        
+
         return {
           success: true,
           output: formatTodosOutput('✅ Todos updated', currentTodos)
         };
       }
-      
+
       case 'clear': {
+        // Clear todos for this session only
+        sessionTodos.delete(context.sessionId);
         currentTodos = [];
-        
+
         // Persist to DB via callback
         if (context.onTodosChanged) {
           context.onTodosChanged(currentTodos);
         }
-        
+
         return {
           success: true,
           output: '🗑️ All todos cleared'
         };
       }
-      
+
       default:
         return {
           success: false,
@@ -244,31 +263,32 @@ function formatTodosOutput(title: string, todos: TodoItem[]): string {
 /**
  * Get todos summary for system prompt injection
  */
-export function getTodosSummary(): string | null {
+export function getTodosSummary(sessionId: string): string | null {
+  const currentTodos = sessionTodos.get(sessionId) || [];
   if (currentTodos.length === 0) return null;
-  
+
   const completed = currentTodos.filter(t => t.status === 'completed').length;
   const inProgress = currentTodos.find(t => t.status === 'in_progress');
   const pending = currentTodos.filter(t => t.status === 'pending');
-  
+
   let summary = `\n\n## 📋 Current Task Plan\n`;
   summary += `Progress: ${completed}/${currentTodos.length} completed\n\n`;
-  
+
   if (inProgress) {
     summary += `**Currently working on:** ${inProgress.content}\n\n`;
   }
-  
+
   summary += `Tasks:\n`;
   currentTodos.forEach(t => {
-    const emoji = t.status === 'completed' ? '✅' : 
+    const emoji = t.status === 'completed' ? '✅' :
                   t.status === 'in_progress' ? '🔄' :
                   t.status === 'cancelled' ? '❌' : '⬜';
     summary += `${emoji} ${t.content}\n`;
   });
-  
+
   if (pending.length > 0 && !inProgress) {
     summary += `\n**Next task:** ${pending[0].content}`;
   }
-  
+
   return summary;
 }

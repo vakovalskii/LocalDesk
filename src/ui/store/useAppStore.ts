@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ServerEvent, SessionStatus, StreamMessage, TodoItem } from "../types";
+import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, SessionInfo } from "../types";
 
 export type PermissionRequest = {
   toolUseId: string;
@@ -13,6 +13,7 @@ export type SessionView = {
   title: string;
   status: SessionStatus;
   cwd?: string;
+  model?: string;
   isPinned?: boolean;
   messages: StreamMessage[];
   permissionRequests: PermissionRequest[];
@@ -23,6 +24,7 @@ export type SessionView = {
   inputTokens?: number;
   outputTokens?: number;
   todos?: TodoItem[];
+  fileChanges?: FileChange[];
 };
 
 interface AppState {
@@ -36,6 +38,9 @@ interface AppState {
   showStartModal: boolean;
   historyRequested: Set<string>;
   autoScrollEnabled: boolean;
+  selectedModel: string | null;
+  availableModels: Array<{ id: string; name: string; description?: string }>;
+  multiThreadTasks: Record<string, MultiThreadTask>;
 
   setPrompt: (prompt: string) => void;
   setCwd: (cwd: string) => void;
@@ -48,6 +53,9 @@ interface AppState {
   sendEvent: (event: any) => void;
   handleServerEvent: (event: ServerEvent) => void;
   setAutoScrollEnabled: (enabled: boolean) => void;
+  setSelectedModel: (model: string | null) => void;
+  setAvailableModels: (models: Array<{ id: string; name: string; description?: string }>) => void;
+  deleteMultiThreadTask: (taskId: string) => void;
 }
 
 function createSession(id: string): SessionView {
@@ -65,6 +73,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   showStartModal: false,
   historyRequested: new Set(),
   autoScrollEnabled: true,
+  selectedModel: null,
+  availableModels: [],
+  multiThreadTasks: {},
 
   setPrompt: (prompt) => set({ prompt }),
   setCwd: (cwd) => set({ cwd }),
@@ -73,6 +84,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowStartModal: (showStartModal) => set({ showStartModal }),
   setActiveSessionId: (id) => set({ activeSessionId: id }),
   setAutoScrollEnabled: (autoScrollEnabled) => set({ autoScrollEnabled }),
+  setSelectedModel: (selectedModel) => set({ selectedModel }),
+  setAvailableModels: (availableModels) => set({ availableModels }),
+  deleteMultiThreadTask: (taskId) => {
+    set((state) => {
+      const nextTasks = { ...state.multiThreadTasks };
+      delete nextTasks[taskId];
+      return { multiThreadTasks: nextTasks };
+    });
+  },
   sendEvent: (event) => {
     window.electron.sendClientEvent(event);
   },
@@ -114,6 +134,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             status: session.status,
             title: session.title,
             cwd: session.cwd,
+            model: session.model,
             isPinned: session.isPinned,
             createdAt: session.createdAt,
             updatedAt: session.updatedAt,
@@ -153,7 +174,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       case "session.history": {
-        const { sessionId, messages, status, inputTokens, outputTokens, todos } = event.payload;
+        const { sessionId, messages, status, inputTokens, outputTokens, todos, model, fileChanges } = event.payload;
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
           return {
@@ -163,12 +184,15 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ...existing,
                 status,
                 messages,
+                model: model ?? existing.model,
                 hydrated: true,
                 // Use token counts from payload (from DB), fallback to existing values
                 inputTokens: inputTokens ?? existing.inputTokens,
                 outputTokens: outputTokens ?? existing.outputTokens,
                 // Load todos from DB (use empty array if none, don't inherit from previous session)
-                todos: todos ?? []
+                todos: todos ?? [],
+                // Load fileChanges from DB
+                fileChanges: fileChanges ?? []
               }
             }
           };
@@ -177,9 +201,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       case "session.status": {
-        const { sessionId, status, title, cwd } = event.payload;
+        const { sessionId, status, title, cwd, model } = event.payload;
         const isPendingStart = state.pendingStart;
-        
+
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
           return {
@@ -190,6 +214,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 status,
                 title: title ?? existing.title,
                 cwd: cwd ?? existing.cwd,
+                model: model ?? existing.model,
                 updatedAt: Date.now(),
                 // Mark as hydrated if this is a new session we just started
                 // This prevents session.history from overwriting new messages
@@ -319,6 +344,120 @@ export const useAppStore = create<AppState>((set, get) => ({
               }
             }
           };
+        });
+        break;
+      }
+
+      case "models.loaded": {
+        const { models } = event.payload;
+        set({ availableModels: models });
+        console.log('[AppStore] Models loaded:', models);
+        break;
+      }
+
+      case "models.error": {
+        const { message } = event.payload;
+        console.error('[AppStore] Failed to load models:', message);
+        break;
+      }
+
+      case "file_changes.updated": {
+        const { sessionId, fileChanges } = event.payload;
+        set((state) => {
+          const existing = state.sessions[sessionId] ?? createSession(sessionId);
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...existing,
+                fileChanges
+              }
+            }
+          };
+        });
+        break;
+      }
+
+      case "file_changes.confirmed": {
+        const { sessionId } = event.payload;
+        set((state) => {
+          const existing = state.sessions[sessionId];
+          if (!existing || !existing.fileChanges) return {};
+          const confirmedChanges = existing.fileChanges.map(c => ({ ...c, status: 'confirmed' as const }));
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...existing,
+                fileChanges: confirmedChanges
+              }
+            }
+          };
+        });
+        break;
+      }
+
+      case "file_changes.rolledback": {
+        const { sessionId, fileChanges } = event.payload;
+        set((state) => {
+          const existing = state.sessions[sessionId];
+          if (!existing) return {};
+          // Remaining fileChanges (failed rollback) or empty array if all succeeded
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...existing,
+                fileChanges: fileChanges ?? []
+              }
+            }
+          };
+        });
+        break;
+      }
+
+      case "file_changes.error": {
+        const { message } = event.payload;
+        set({ globalError: message });
+        break;
+      }
+
+      case "task.created": {
+        const { task } = event.payload;
+        set((state) => ({
+          multiThreadTasks: {
+            ...state.multiThreadTasks,
+            [task.id]: task
+          }
+        }));
+        break;
+      }
+
+      case "task.status": {
+        const { taskId, status } = event.payload;
+        set((state) => {
+          const existing = state.multiThreadTasks[taskId];
+          if (!existing) return {};
+          return {
+            multiThreadTasks: {
+              ...state.multiThreadTasks,
+              [taskId]: {
+                ...existing,
+                status,
+                updatedAt: Date.now()
+              }
+            }
+          };
+        });
+        break;
+      }
+
+      case "task.deleted": {
+        const { taskId } = event.payload;
+        set((state) => {
+          const nextTasks = { ...state.multiThreadTasks };
+          delete nextTasks[taskId];
+          return { multiThreadTasks: nextTasks };
         });
         break;
       }

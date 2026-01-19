@@ -5,6 +5,7 @@
 import { tavily } from '@tavily/core';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
 import type { WebSearchProvider } from '../../types.js';
+import { webCache } from '../web-cache.js';
 
 export interface WebSearchParams {
   query: string;
@@ -65,6 +66,14 @@ class TavilyWebSearch {
 
     console.log(`[TavilyWebSearch] Query: "${query}", max_results: ${max_results}`);
 
+    // Check cache first (for sharing between threads)
+    const cacheKey = `search:tavily:${query}:${max_results}`;
+    const cached = await webCache.get(cacheKey);
+    if (cached) {
+      console.log(`[TavilyWebSearch] Cache hit for query: "${query}"`);
+      return cached as SearchResult[];
+    }
+
     try {
       const response = await this.tvly.search(query, {
         maxResults: Math.min(max_results, 10),
@@ -80,6 +89,10 @@ class TavilyWebSearch {
       }));
 
       console.log(`[TavilyWebSearch] Found ${results.length} results`);
+
+      // Cache the results (TTL: 5 minutes)
+      await webCache.set(cacheKey, results, 5 * 60 * 1000);
+
       return results;
 
     } catch (error) {
@@ -115,6 +128,14 @@ class ZaiWebSearch {
 
     console.log(`[ZaiWebSearch] Query: "${query}", max_results: ${max_results}`);
 
+    // Check cache first (for sharing between threads)
+    const cacheKey = `search:zai:${query}:${max_results}`;
+    const cached = await webCache.get(cacheKey);
+    if (cached) {
+      console.log(`[ZaiWebSearch] Cache hit for query: "${query}"`);
+      return cached as SearchResult[];
+    }
+
     try {
       const response = await fetch(`${this.baseUrl}/paas/v4/web_search`, {
         method: 'POST',
@@ -144,6 +165,10 @@ class ZaiWebSearch {
       }));
 
       console.log(`[ZaiWebSearch] Found ${results.length} results`);
+
+      // Cache the results (TTL: 5 minutes)
+      await webCache.set(cacheKey, results, 5 * 60 * 1000);
+
       return results;
 
     } catch (error) {

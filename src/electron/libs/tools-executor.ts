@@ -136,10 +136,10 @@ export class ToolExecutor {
           success: false,
           error: `❌ Cannot perform file operations without a workspace folder.\n\n` +
                  `📁 To enable file access:\n` +
-                 `1. Click "+ New Chat" in the sidebar\n` +
+                 `1. Click "+ New Task" in the sidebar\n` +
                  `2. Choose a workspace folder using the "Browse..." button\n` +
-                 `3. Start a new chat session\n\n` +
-                 `💬 You can continue chatting without file access, but I won't be able to read, write, or edit files.`
+                 `3. Start a new task session\n\n` +
+                 `💬 You can continue talking and using tools without file access, but I won't be able to read, write, or edit files.`
         };
       }
     }

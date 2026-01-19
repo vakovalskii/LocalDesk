@@ -1,12 +1,17 @@
 /**
  * TodoPanel - Displays agent's task plan with progress bar (collapsible)
+ * and file changes with Confirm/Rollback buttons
  */
 
 import { useState } from "react";
-import type { TodoItem, TodoStatus } from "../types";
+import type { TodoItem, TodoStatus, FileChange } from "../types";
 
 interface TodoPanelProps {
   todos: TodoItem[];
+  fileChanges?: FileChange[];
+  activeSessionId?: string | null;
+  onConfirmChanges?: (sessionId: string) => void;
+  onRollbackChanges?: (sessionId: string) => void;
 }
 
 const statusConfig: Record<TodoStatus, { emoji: string }> = {
@@ -16,9 +21,16 @@ const statusConfig: Record<TodoStatus, { emoji: string }> = {
   cancelled: { emoji: '❌' }
 };
 
-export function TodoPanel({ todos }: TodoPanelProps) {
+export function TodoPanel({
+  todos,
+  fileChanges = [],
+  activeSessionId,
+  onConfirmChanges,
+  onRollbackChanges
+}: TodoPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
-  
+  const [showAllFiles, setShowAllFiles] = useState(false);
+
   if (!todos || todos.length === 0) return null;
 
   const completed = todos.filter(t => t.status === 'completed').length;
@@ -28,16 +40,40 @@ export function TodoPanel({ todos }: TodoPanelProps) {
   const inProgress = todos.find(t => t.status === 'in_progress');
   const isAllDone = completed + cancelled === total;
 
+  // Filter pending file changes (only these can be rolled back)
+  const pendingFileChanges = fileChanges.filter(c => c.status === 'pending');
+  const hasPendingChanges = pendingFileChanges.length > 0;
+
+  // Show only 4 files by default, unless showAllFiles is true
+  const visibleFileChanges = showAllFiles ? pendingFileChanges : pendingFileChanges.slice(0, 4);
+  const hasMoreFiles = pendingFileChanges.length > 4;
+
+  // Calculate total additions and deletions
+  const totalAdditions = pendingFileChanges.reduce((sum, c) => sum + c.additions, 0);
+  const totalDeletions = pendingFileChanges.reduce((sum, c) => sum + c.deletions, 0);
+
+  const handleConfirm = () => {
+    if (activeSessionId && onConfirmChanges) {
+      onConfirmChanges(activeSessionId);
+    }
+  };
+
+  const handleRollback = () => {
+    if (activeSessionId && onRollbackChanges) {
+      onRollbackChanges(activeSessionId);
+    }
+  };
+
   return (
     <div className={`border rounded-lg shadow-sm ${isAllDone ? 'bg-green-50 border-green-200' : 'bg-white border-ink-200'}`}>
       {/* Header - always visible, clickable to expand/collapse */}
-      <button 
+      <button
         type="button"
         className="w-full flex items-center justify-between p-2.5 cursor-pointer select-none hover:bg-ink-50/50 transition-colors text-left rounded-lg"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span 
+          <span
             className="text-xs text-ink-400 transition-transform duration-200 inline-block flex-shrink-0"
             style={{ transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}
           >
@@ -61,12 +97,18 @@ export function TodoPanel({ todos }: TodoPanelProps) {
               All tasks completed!
             </span>
           )}
+          {/* Show file changes summary when collapsed */}
+          {!isExpanded && hasPendingChanges && (
+            <span className="text-xs text-orange-600 ml-1">
+              ({pendingFileChanges.length} files changed)
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Mini progress bar when collapsed */}
           {!isExpanded && (
             <div className="h-1.5 w-16 bg-ink-100 rounded-full overflow-hidden">
-              <div 
+              <div
                 className={`h-full rounded-full ${isAllDone ? 'bg-green-500' : 'bg-green-500'}`}
                 style={{ width: `${percent}%` }}
               />
@@ -81,7 +123,7 @@ export function TodoPanel({ todos }: TodoPanelProps) {
         <>
           {/* Progress bar */}
           <div className={`h-1.5 mx-3 mb-2 rounded-full overflow-hidden ${isAllDone ? 'bg-green-200' : 'bg-ink-100'}`}>
-            <div 
+            <div
               className="h-full bg-green-500 rounded-full transition-all duration-300 ease-out"
               style={{ width: `${percent}%` }}
             />
@@ -96,7 +138,7 @@ export function TodoPanel({ todos }: TodoPanelProps) {
                 </span>
               </div>
             )}
-            
+
             {/* Current task highlight */}
             {!isAllDone && inProgress && (
               <div className="bg-blue-50 border border-blue-200 rounded px-2 py-1.5 mb-2">
@@ -109,15 +151,102 @@ export function TodoPanel({ todos }: TodoPanelProps) {
               </div>
             )}
 
+            {/* File Changes Section */}
+            {hasPendingChanges && (
+              <div className="bg-orange-50 border border-orange-200 rounded px-2 py-1.5 mb-2">
+                {/* File changes header with stats */}
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">📁</span>
+                    <span className="text-xs text-orange-700 font-medium">
+                      Changed Files ({pendingFileChanges.length})
+                    </span>
+                    {/* Summary stats */}
+                    {totalAdditions > 0 || totalDeletions > 0 && (
+                      <span className="text-xs font-mono">
+                        <span className="text-green-600">+{totalAdditions}</span>
+                        {totalDeletions > 0 && (
+                          <span className="text-red-600 ml-1">-{totalDeletions}</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* File changes list */}
+                {visibleFileChanges.map((change) => (
+                  <div
+                    key={change.path}
+                    className="flex items-center justify-between py-1 px-1.5 text-xs bg-white rounded mb-1"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <svg className="w-3.5 h-3.5 text-orange-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="text-ink-700 font-mono truncate flex-shrink-0">
+                        {change.path}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0 font-mono">
+                      {change.additions > 0 && (
+                        <span className="text-green-600">+{change.additions}</span>
+                      )}
+                      {change.deletions > 0 && (
+                        <span className="text-red-600">-{change.deletions}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Show more/less button */}
+                {hasMoreFiles && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllFiles(!showAllFiles)}
+                    className="text-xs text-orange-600 hover:text-orange-700 font-medium mt-1 ml-1"
+                  >
+                    {showAllFiles
+                      ? `Show less (-${pendingFileChanges.length - 4} files)`
+                      : `Show ${pendingFileChanges.length - 4} more files...`
+                    }
+                  </button>
+                )}
+
+                {/* Confirm/Rollback buttons */}
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-orange-200">
+                  <button
+                    type="button"
+                    onClick={handleConfirm}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRollback}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Rollback
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Task list - SCROLLABLE */}
-            <div 
+            <div
               className="todo-scroll-container"
               onWheel={(e) => {
                 e.stopPropagation();
                 const el = e.currentTarget;
                 el.scrollTop += e.deltaY;
               }}
-              style={{ 
+              style={{
                 maxHeight: '150px',
                 overflowY: 'auto',
                 overflowX: 'hidden'
@@ -134,9 +263,9 @@ export function TodoPanel({ todos }: TodoPanelProps) {
                       }`}
                     >
                       <span className="flex-shrink-0">{config.emoji}</span>
-                      <span 
+                      <span
                         className={`break-words ${
-                          todo.status === 'completed' ? 'line-through text-ink-400' : 
+                          todo.status === 'completed' ? 'line-through text-ink-400' :
                           todo.status === 'cancelled' ? 'line-through text-ink-400' :
                           'text-ink-700'
                         }`}

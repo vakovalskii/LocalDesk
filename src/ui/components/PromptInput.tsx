@@ -19,13 +19,15 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
   const setPrompt = useAppStore((state) => state.setPrompt);
   const setPendingStart = useAppStore((state) => state.setPendingStart);
   const setGlobalError = useAppStore((state) => state.setGlobalError);
+  const selectedModel = useAppStore((state) => state.selectedModel);
+  const setSelectedModel = useAppStore((state) => state.setSelectedModel);
 
   const activeSession = activeSessionId ? sessions[activeSessionId] : undefined;
   const isRunning = activeSession?.status === "running";
 
   const handleSend = useCallback(async () => {
     const trimmedPrompt = prompt.trim();
-    
+
     // For existing sessions, require a prompt
     if (activeSessionId && !trimmedPrompt) return;
 
@@ -49,13 +51,16 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
       }
       sendEvent({
         type: "session.start",
-        payload: { 
-          title, 
+        payload: {
+          title,
           prompt: trimmedPrompt, // Can be empty string
-          cwd: cwd.trim() || undefined, 
-          allowedTools: DEFAULT_ALLOWED_TOOLS 
+          cwd: cwd.trim() || undefined,
+          allowedTools: DEFAULT_ALLOWED_TOOLS,
+          model: selectedModel || undefined
         }
       });
+      // Clear selected model after starting session
+      setSelectedModel(null);
     } else {
       if (activeSession?.status === "running") {
         setGlobalError("Session is still running. Please wait for it to finish.");
@@ -64,7 +69,7 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
       sendEvent({ type: "session.continue", payload: { sessionId: activeSessionId, prompt: trimmedPrompt } });
     }
     setPrompt("");
-  }, [activeSession, activeSessionId, cwd, prompt, sendEvent, setGlobalError, setPendingStart, setPrompt]);
+  }, [activeSession, activeSessionId, cwd, prompt, sendEvent, setGlobalError, setPendingStart, setPrompt, selectedModel, setSelectedModel]);
 
   const handleStop = useCallback(() => {
     if (!activeSessionId) return;
