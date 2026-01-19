@@ -184,7 +184,7 @@ src/
 │   ├── ipc-handlers.ts         # IPC communication
 │   └── libs/
 │       ├── runner-openai.ts    # OpenAI API runner
-│       ├── tools-executor.ts   # Tool execution logic
+│       ├── tools-executor.ts   # Tool execution logic  
 │       ├── session-store.ts    # SQLite session persistence
 │       ├── container/
 │       │   └── quickjs-sandbox.ts  # WASM sandbox
