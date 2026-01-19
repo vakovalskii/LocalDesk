@@ -23,6 +23,15 @@ import { executeReadDocumentTool } from './tools/read-document-tool.js';
 import { executeRenderPageTool } from './tools/render-page-tool.js';
 import { executeManageTodosTool } from './tools/manage-todos-tool.js';
 import { ScheduleTaskTool } from './tools/schedule-task-tool.js';
+import {
+  executeGitStatusTool,
+  executeGitLogTool,
+  executeGitDiffTool,
+  executeGitBranchTool,
+  executeGitCheckoutTool,
+  executeGitAddTool,
+  executeGitCommitTool
+} from './tools/git-tool.js';
 import type { SchedulerStore } from './scheduler-store.js';
 
 export { ToolResult };
@@ -190,7 +199,34 @@ export class ToolExecutor {
         
         case 'manage_todos':
           return await executeManageTodosTool(args as any, context);
-        
+
+        case 'git_status':
+          return await executeGitStatusTool(args as any, context);
+
+        case 'git_log':
+          return await executeGitLogTool(args as any, context);
+
+        case 'git_diff':
+          return await executeGitDiffTool(args as any, context);
+
+        case 'git_branch':
+          return await executeGitBranchTool(args as any, context);
+
+        case 'git_checkout':
+          return await executeGitCheckoutTool(args as any, context);
+
+        case 'git_add':
+          return await executeGitAddTool(args as any, context);
+
+        case 'git_commit':
+          return await executeGitCommitTool(args as any, context);
+
+        case 'render_page':
+          return await executeRenderPageTool(args as any, context);
+
+        case 'Scheduler':
+          return await this.executeScheduleTask(args, context);
+
         default:
           return {
             success: false,
