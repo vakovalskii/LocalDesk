@@ -115,6 +115,22 @@ export class ToolExecutor {
       this.extractPageTool = new ExtractPageContentTool(null, "tavily");
     }
 
+    } else {
+      // Use DuckDuckGo fallback (no API key required)
+      this.webSearchTool = new WebSearchTool(null, "tavily", "default");
+    }
+
+    // Page extraction with fetch fallback
+    if (provider === "tavily" && apiSettings?.tavilyApiKey) {
+      this.extractPageTool = new ExtractPageContentTool(
+        apiSettings.tavilyApiKey,
+        "tavily",
+      );
+    } else {
+      // Use fetch fallback (no API key required)
+      this.extractPageTool = new ExtractPageContentTool(null, "tavily");
+    }
+
     // Initialize ZaiReader with fetch fallback if enabled
     const zaiReaderApiUrl = apiSettings?.zaiReaderApiUrl || "default";
     if (apiSettings?.enableZaiReader) {
@@ -269,14 +285,14 @@ export class ToolExecutor {
 
         case "read_document":
           return await executeReadDocumentTool(args as any, context);
-        
-        case 'render_page':
+
+        case "render_page":
           return await executeRenderPageTool(args as any, context);
-        
-        case 'schedule_task':
+
+        case "schedule_task":
           return await this.executeScheduleTask(args, context);
-        
-        case 'manage_todos':
+
+        case "manage_todos":
           return await executeManageTodosTool(args as any, context);
 
         case "git_status":
