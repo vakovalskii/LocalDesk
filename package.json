@@ -37,6 +37,7 @@
 		"build": "tsc -b && vite build",
 		"lint": "eslint .",
 		"preview": "vite preview",
+		"postinstall": "electron-rebuild -f -w better-sqlite3 || true",
 		"generate-build-info": "node scripts/generate-build-info.js",
 		"transpile:electron": "npm run generate-build-info && tsc --project src/electron/tsconfig.json && npm run copy:prompts && npm run copy:build-info",
 		"copy:prompts": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('dist-electron/libs/prompts',{recursive:true});fs.readdirSync('src/electron/libs/prompts').filter(f=>f.endsWith('.txt')).forEach(f=>fs.copyFileSync(path.join('src/electron/libs/prompts',f),path.join('dist-electron/libs/prompts',f)))\"",
@@ -52,7 +53,7 @@
 		"@radix-ui/react-tooltip": "^1.2.8",
 		"@tailwindcss/vite": "^4.1.18",
 		"@tavily/core": "^0.7.1",
-		"better-sqlite3": "^12.6.0",
+		"better-sqlite3": "^12.6.2",
 		"dotenv": "^17.2.3",
 		"highlight.js": "^11.11.1",
 		"mammoth": "^1.11.0",
@@ -61,6 +62,7 @@
 		"openai": "^6.16.0",
 		"os-utils": "^0.0.14",
 		"pdf-parse": "^1.1.1",
+		"quickjs-emscripten": "^0.31.0",
 		"react": "^19.2.3",
 		"react-dom": "^19.2.3",
 		"react-markdown": "^10.1.0",
@@ -71,7 +73,6 @@
 		"vite-tsconfig-paths": "^6.0.3",
 		"vm2": "^3.10.1",
 		"zustand": "^5.0.10",
-		"quickjs-emscripten": "^0.31.0",
 		"playwright": "^1.57.0"
 	},
 	"devDependencies": {
