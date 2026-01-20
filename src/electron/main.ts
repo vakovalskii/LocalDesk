@@ -10,6 +10,33 @@ import "./libs/claude-settings.js";
 import { promises as fs } from 'fs';
 import { join, resolve } from 'path';
 
+function loadURLWithRetry(
+    win: BrowserWindow,
+    url: string,
+    {
+        maxAttempts = 60,
+        delayMs = 250,
+    }: { maxAttempts?: number; delayMs?: number } = {}
+) {
+    let attempt = 0;
+
+    const tryLoad = async () => {
+        attempt++;
+        try {
+            await win.loadURL(url);
+        } catch (err) {
+            if (attempt >= maxAttempts) {
+                console.error(`[Main] Failed to load dev URL after ${attempt} attempts: ${url}`, err);
+                return;
+            }
+            console.log(`[Main] Dev server not ready yet. Retrying (${attempt}/${maxAttempts})...`);
+            setTimeout(tryLoad, delayMs);
+        }
+    };
+
+    void tryLoad();
+}
+
 app.on("ready", () => {
     // Start the scheduler service
     startScheduler();
@@ -29,7 +56,7 @@ app.on("ready", () => {
         trafficLightPosition: { x: 15, y: 18 }
     });
 
-    if (isDev()) mainWindow.loadURL(`http://localhost:${DEV_PORT}`)
+    if (isDev()) loadURLWithRetry(mainWindow, `http://localhost:${DEV_PORT}`)
     else mainWindow.loadFile(getUIPath());
 
     // Register window with SessionManager for event routing
