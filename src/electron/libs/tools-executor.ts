@@ -115,22 +115,6 @@ export class ToolExecutor {
       this.extractPageTool = new ExtractPageContentTool(null, "tavily");
     }
 
-    } else {
-      // Use DuckDuckGo fallback (no API key required)
-      this.webSearchTool = new WebSearchTool(null, "tavily", "default");
-    }
-
-    // Page extraction with fetch fallback
-    if (provider === "tavily" && apiSettings?.tavilyApiKey) {
-      this.extractPageTool = new ExtractPageContentTool(
-        apiSettings.tavilyApiKey,
-        "tavily",
-      );
-    } else {
-      // Use fetch fallback (no API key required)
-      this.extractPageTool = new ExtractPageContentTool(null, "tavily");
-    }
-
     // Initialize ZaiReader with fetch fallback if enabled
     const zaiReaderApiUrl = apiSettings?.zaiReaderApiUrl || "default";
     if (apiSettings?.enableZaiReader) {

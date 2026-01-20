@@ -1,34 +1,5 @@
 import { create } from 'zustand';
-import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask } from "../types";
-
-export type PermissionRequest = {
-  toolUseId: string;
-  toolName: string;
-  input: unknown;
-  explanation?: string;
-};
-
-export type SessionView = {
-  id: string;
-  title: string;
-  status: SessionStatus;
-  cwd?: string;
-  model?: string;
-  isPinned?: boolean;
-  messages: StreamMessage[];
-  permissionRequests: PermissionRequest[];
-  lastPrompt?: string;
-  createdAt?: number;
-  updatedAt?: number;
-  hydrated: boolean;
-  inputTokens?: number;
-  outputTokens?: number;
-  todos?: TodoItem[];
-  fileChanges?: FileChange[];
-};
-
-import { create } from 'zustand';
-import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, SessionInfo, LLMModel, LLMProvider, LLMProviderSettings } from "../types";
+import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, LLMModel, LLMProvider, LLMProviderSettings } from "../types";
 
 export type PermissionRequest = {
   toolUseId: string;

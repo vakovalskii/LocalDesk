@@ -7,7 +7,7 @@ function generateTaskTitle(
   mode: TaskMode,
   tasks: ThreadTask[],
   consensusPrompt: string,
-  consensusModel: string,
+  _consensusModel: string,
   consensusQuantity: number
 ): string {
   if (mode === "consensus") {

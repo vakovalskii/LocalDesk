@@ -34,7 +34,6 @@ function App() {
 
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
-  const setActiveSessionId = useAppStore((s) => s.setActiveSessionId);
   const showStartModal = useAppStore((s) => s.showStartModal);
   const setShowStartModal = useAppStore((s) => s.setShowStartModal);
   const globalError = useAppStore((s) => s.globalError);

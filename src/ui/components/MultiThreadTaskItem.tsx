@@ -98,7 +98,7 @@ export function MultiThreadTaskItem({
                 <div className="flex items-center gap-2">
                   {/* Mode badge */}
                   <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-accent/20 text-accent">
-                    {task.mode === 'consensus' ? 'Consensus' : 'Multi'
+                    {task.mode === 'consensus' ? 'Consensus' : 'Multi'}
                   </span>
                   {totalTokens > 0 && (
                     <span className="text-[10px] text-muted bg-ink-100 px-1.5 py-0.5 rounded-full">
