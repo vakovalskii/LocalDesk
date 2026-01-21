@@ -167,8 +167,8 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
         // Use legacy API settings
         const guiSettings = loadApiSettings();
         
-        if (!guiSettings || !guiSettings.baseUrl || !guiSettings.model) {
-          throw new Error('API settings not configured. Please set API Key, Base URL and Model in Settings (⚙️).');
+        if (!guiSettings || !guiSettings.baseUrl) {
+          throw new Error('API settings not configured. Please set API Key and Base URL in Settings (⚙️).');
         }
         
         if (!guiSettings.apiKey) {
@@ -177,7 +177,13 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
 
         apiKey = guiSettings.apiKey;
         baseURL = guiSettings.baseUrl;
-        modelName = guiSettings.model;
+        // Use session.model if provided, otherwise fall back to guiSettings.model
+        modelName = session.model || guiSettings.model;
+        
+        if (!modelName) {
+          throw new Error('Model not specified. Please select a model in Settings (⚙️).');
+        }
+        
         temperature = session.temperature; // undefined means don't send
         providerInfo = 'Legacy API';
       }

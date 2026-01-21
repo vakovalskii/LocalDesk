@@ -115,8 +115,16 @@ function App() {
     if (event.type === "settings.loaded") {
       setApiSettings(event.payload.settings);
       setSettingsLoaded(true);
+      // Initialize selectedModel from settings if not already set
+      if (!selectedModel && event.payload.settings?.model) {
+        setSelectedModel(event.payload.settings.model);
+      }
+      // Initialize temperature from settings if not already set
+      if (event.payload.settings?.temperature !== undefined) {
+        setSelectedTemperature(event.payload.settings.temperature);
+      }
     }
-  }, [handleServerEvent, handlePartialMessages]);
+  }, [handleServerEvent, handlePartialMessages, selectedModel, setSelectedModel, setSelectedTemperature]);
 
   const { connected, sendEvent } = useIPC(onEvent);
   const { handleStartFromModal } = usePromptActions(sendEvent);
