@@ -121,7 +121,13 @@ export function Sidebar({
               </button>
             </Tooltip.Trigger>
             <Tooltip.Portal>
-              <Tooltip.Content className="z-50 rounded-lg border border-ink-900/10 bg-white px-3 py-2 text-sm shadow-lg" sideOffset={5}>
+              <Tooltip.Content
+                className="z-[100] rounded-lg border border-ink-900/10 bg-white px-3 py-2 text-sm shadow-lg"
+                side="bottom"
+                align="center"
+                sideOffset={8}
+                collisionPadding={12}
+              >
                 New Task
                 <Tooltip.Arrow className="fill-white" />
               </Tooltip.Content>
@@ -145,7 +151,13 @@ export function Sidebar({
               </button>
             </Tooltip.Trigger>
             <Tooltip.Portal>
-              <Tooltip.Content className="z-50 rounded-lg border border-ink-900/10 bg-white px-3 py-2 text-sm shadow-lg" sideOffset={5}>
+              <Tooltip.Content
+                className="z-[100] rounded-lg border border-ink-900/10 bg-white px-3 py-2 text-sm shadow-lg"
+                side="bottom"
+                align="center"
+                sideOffset={8}
+                collisionPadding={12}
+              >
                 Multi-Thread
                 <Tooltip.Arrow className="fill-white" />
               </Tooltip.Content>
@@ -169,7 +181,13 @@ export function Sidebar({
               </button>
             </Tooltip.Trigger>
             <Tooltip.Portal>
-              <Tooltip.Content className="z-50 rounded-lg border border-ink-900/10 bg-white px-3 py-2 text-sm shadow-lg" sideOffset={5}>
+              <Tooltip.Content
+                className="z-[100] rounded-lg border border-ink-900/10 bg-white px-3 py-2 text-sm shadow-lg"
+                side="bottom"
+                align="center"
+                sideOffset={8}
+                collisionPadding={12}
+              >
                 API Settings
                 <Tooltip.Arrow className="fill-white" />
               </Tooltip.Content>
