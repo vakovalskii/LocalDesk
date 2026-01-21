@@ -145,7 +145,13 @@ class SessionManager {
         const payloadSessionId = (event.payload as any).sessionId;
 
         // Notify when session completes/errors and the focused window isn't on that session
-        if (shouldNotifyForSession(status, payloadSessionId, this.getFocusedSessionId())) {
+        if (
+          shouldNotifyForSession(
+            status,
+            payloadSessionId,
+            this.getFocusedSessionId(),
+          )
+        ) {
           if (payloadSessionId) {
             const body = buildNotificationBody(
               this.latestResponses.get(payloadSessionId) || "",
