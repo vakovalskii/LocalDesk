@@ -17,6 +17,7 @@ export type Session = {
   allowedTools?: string;
   lastPrompt?: string;
   model?: string;
+  temperature?: number;
   threadId?: string; // Thread ID for multi-thread sessions
   fileChanges?: FileChange[];
   pendingPermissions: Map<string, PendingPermission>;
@@ -68,7 +69,7 @@ export class SessionStore {
     this.loadSessions();
   }
 
-  createSession(options: { cwd?: string; allowedTools?: string; prompt?: string; title: string; model?: string; threadId?: string }): Session {
+  createSession(options: { cwd?: string; allowedTools?: string; prompt?: string; title: string; model?: string; threadId?: string; temperature?: number }): Session {
     const id = crypto.randomUUID();
     const now = Date.now();
     const session: Session = {
@@ -79,6 +80,7 @@ export class SessionStore {
       allowedTools: options.allowedTools,
       lastPrompt: options.prompt,
       model: options.model,
+      temperature: options.temperature,
       threadId: options.threadId,
       pendingPermissions: new Map()
     };

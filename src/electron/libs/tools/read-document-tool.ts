@@ -34,7 +34,8 @@ export const ReadDocumentToolDefinition: ToolDefinition = {
     name: "read_document",
     description: `Extract text content from document files (PDF, DOCX).
 Returns extracted text, page count (for PDF), and metadata.
-Max file size: 10MB. Scanned PDFs require external OCR tools.`,
+Max file size: 10MB. Scanned PDFs require external OCR tools.
+Use start_line/end_line to read specific portions of extracted text.`,
     parameters: {
       type: "object",
       properties: {
@@ -45,6 +46,14 @@ Max file size: 10MB. Scanned PDFs require external OCR tools.`,
         file_path: {
           type: "string",
           description: "Path to the document file (PDF or DOCX)"
+        },
+        start_line: {
+          type: "integer",
+          description: "Start reading from this line number (1-based, inclusive). Optional."
+        },
+        end_line: {
+          type: "integer",
+          description: "Stop reading at this line number (1-based, inclusive). Optional."
         }
       },
       required: ["explanation", "file_path"]
@@ -53,7 +62,12 @@ Max file size: 10MB. Scanned PDFs require external OCR tools.`,
 };
 
 export async function executeReadDocumentTool(
-  args: { file_path: string; explanation: string },
+  args: { 
+    file_path: string; 
+    explanation: string;
+    start_line?: number;
+    end_line?: number;
+  },
   context: ToolExecutionContext
 ): Promise<ToolResult> {
   // Security check
@@ -89,9 +103,9 @@ export async function executeReadDocumentTool(
     console.log(`[ReadDocument] Reading ${ext} file: ${fullPath} (${(stats.size / 1024).toFixed(1)}KB)`);
     
     if (ext === '.pdf') {
-      return await readPDF(fullPath, args.file_path, stats.size);
+      return await readPDF(fullPath, args.file_path, stats.size, args.start_line, args.end_line);
     } else {
-      return await readDOCX(fullPath, args.file_path, stats.size);
+      return await readDOCX(fullPath, args.file_path, stats.size, args.start_line, args.end_line);
     }
     
   } catch (error: any) {
@@ -115,7 +129,13 @@ export async function executeReadDocumentTool(
   }
 }
 
-async function readPDF(fullPath: string, displayPath: string, fileSize: number): Promise<ToolResult> {
+async function readPDF(
+  fullPath: string, 
+  displayPath: string, 
+  fileSize: number,
+  startLine?: number,
+  endLine?: number
+): Promise<ToolResult> {
   const dataBuffer = readFileSync(fullPath);
   const pdf = await getPdfParse();
   const data = await pdf(dataBuffer);
@@ -143,11 +163,30 @@ ${data.text.trim() || '(none)'}
     };
   }
   
+  // Split text into lines for partial reading
+  const lines = data.text.split('\n');
+  const totalLines = lines.length;
+  
+  // Apply line filters
+  let start = startLine ?? 1;
+  let end = endLine ?? totalLines;
+  
+  // Validate and adjust line numbers
+  start = Math.max(1, Math.min(start, totalLines));
+  end = Math.max(start, Math.min(end, totalLines));
+  
+  // Extract lines (convert to 0-based index)
+  const selectedLines = lines.slice(start - 1, end);
+  const isPartial = start > 1 || end < totalLines;
+  
   // Build output
   let output = `✅ **PDF extracted successfully**\n\n`;
   output += `📄 **File**: ${displayPath}\n`;
   output += `📊 **Pages**: ${data.numpages}\n`;
-  output += `📝 **Characters**: ${data.text.length.toLocaleString()}\n`;
+  output += `📝 **Total lines**: ${totalLines}\n`;
+  if (isPartial) {
+    output += `📑 **Showing**: lines ${start}-${end} of ${totalLines}\n`;
+  }
   output += `💾 **Size**: ${(fileSize / 1024).toFixed(1)}KB\n`;
   
   if (data.info) {
@@ -160,12 +199,29 @@ ${data.text.trim() || '(none)'}
     }
   }
   
-  output += `\n---\n**Content:**\n\`\`\`\n${data.text}\n\`\`\``;
+  // Add content with line numbers
+  const contentWithLineNumbers = selectedLines.map((line: string, idx: number) => {
+    const lineNum = String(start + idx).padStart(6, ' ');
+    return `${lineNum}|${line}`;
+  }).join('\n');
+  
+  output += `\n---\n**Content:**\n\`\`\`\n${contentWithLineNumbers}\n\`\`\``;
+  
+  // Add continuation hint if partial
+  if (end < totalLines) {
+    output += `\n\n[... ${totalLines - end} more lines. Use start_line=${end + 1} to continue reading.]`;
+  }
   
   return { success: true, output };
 }
 
-async function readDOCX(fullPath: string, displayPath: string, fileSize: number): Promise<ToolResult> {
+async function readDOCX(
+  fullPath: string, 
+  displayPath: string, 
+  fileSize: number,
+  startLine?: number,
+  endLine?: number
+): Promise<ToolResult> {
   const dataBuffer = readFileSync(fullPath);
   const mammothLib = await getMammoth();
   
@@ -188,9 +244,28 @@ Please check the file manually.`
     };
   }
   
+  // Split text into lines for partial reading
+  const lines = text.split('\n');
+  const totalLines = lines.length;
+  
+  // Apply line filters
+  let start = startLine ?? 1;
+  let end = endLine ?? totalLines;
+  
+  // Validate and adjust line numbers
+  start = Math.max(1, Math.min(start, totalLines));
+  end = Math.max(start, Math.min(end, totalLines));
+  
+  // Extract lines (convert to 0-based index)
+  const selectedLines = lines.slice(start - 1, end);
+  const isPartial = start > 1 || end < totalLines;
+  
   let output = `✅ **DOCX extracted successfully**\n\n`;
   output += `📄 **File**: ${displayPath}\n`;
-  output += `📝 **Characters**: ${text.length.toLocaleString()}\n`;
+  output += `📝 **Total lines**: ${totalLines}\n`;
+  if (isPartial) {
+    output += `📑 **Showing**: lines ${start}-${end} of ${totalLines}\n`;
+  }
   output += `💾 **Size**: ${(fileSize / 1024).toFixed(1)}KB\n`;
   
   // Show warnings if any
@@ -203,7 +278,18 @@ Please check the file manually.`
     }
   }
   
-  output += `\n---\n**Content:**\n\`\`\`\n${text}\n\`\`\``;
+  // Add content with line numbers
+  const contentWithLineNumbers = selectedLines.map((line: string, idx: number) => {
+    const lineNum = String(start + idx).padStart(6, ' ');
+    return `${lineNum}|${line}`;
+  }).join('\n');
+  
+  output += `\n---\n**Content:**\n\`\`\`\n${contentWithLineNumbers}\n\`\`\``;
+  
+  // Add continuation hint if partial
+  if (end < totalLines) {
+    output += `\n\n[... ${totalLines - end} more lines. Use start_line=${end + 1} to continue reading.]`;
+  }
   
   return { success: true, output };
 }

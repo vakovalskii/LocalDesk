@@ -14,7 +14,6 @@ export function loadLLMProviderSettings(): LLMProviderSettings | null {
   try {
     const settingsPath = getSettingsPath();
     if (!existsSync(settingsPath)) {
-      console.log('[LLM Providers] Settings file does not exist');
       return { providers: [], models: [] };
     }
 
@@ -22,7 +21,6 @@ export function loadLLMProviderSettings(): LLMProviderSettings | null {
 
     // Check if file is empty or contains only whitespace
     if (!raw || raw.trim() === '') {
-      console.log('[LLM Providers] Settings file is empty');
       return { providers: [], models: [] };
     }
 
@@ -30,16 +28,13 @@ export function loadLLMProviderSettings(): LLMProviderSettings | null {
 
     // Validate structure
     if (!settings.providers || !Array.isArray(settings.providers)) {
-      console.error('[LLM Providers] Invalid providers structure');
       return { providers: [], models: [] };
     }
 
     if (!settings.models || !Array.isArray(settings.models)) {
-      console.error('[LLM Providers] Invalid models structure');
       return { providers: settings.providers || [], models: [] };
     }
 
-    console.log(`[LLM Providers] Loaded ${settings.providers.length} providers and ${settings.models.length} models`);
     return settings;
   } catch (error) {
     console.error("[LLM Providers] Failed to load settings:", error);

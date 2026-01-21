@@ -279,7 +279,8 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
       title: event.payload.title,
       allowedTools: event.payload.allowedTools,
       prompt: event.payload.prompt,
-      model: event.payload.model
+      model: event.payload.model,
+      temperature: event.payload.temperature
     });
 
     // Subscribe this window to the session
@@ -480,6 +481,32 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
       emit({
         type: "session.status",
         payload: { sessionId: session.id, status: session.status, title: session.title, cwd: session.cwd, model: session.model }
+      });
+    }
+    return;
+  }
+
+  if (event.type === "session.update") {
+    const { sessionId, model, temperature, title } = event.payload;
+    const updates: any = {};
+    if (model !== undefined) updates.model = model;
+    if (temperature !== undefined) updates.temperature = temperature;
+    if (title !== undefined) updates.title = title;
+    
+    sessions.updateSession(sessionId, updates);
+    const session = sessions.getSession(sessionId);
+    if (session) {
+      console.log(`[IPC] Session ${sessionId} updated:`, updates);
+      emit({
+        type: "session.status",
+        payload: { 
+          sessionId: session.id, 
+          status: session.status, 
+          title: session.title, 
+          cwd: session.cwd, 
+          model: session.model,
+          temperature: session.temperature
+        }
       });
     }
     return;
@@ -1042,17 +1069,46 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
 
   if (event.type === "llm.providers.save") {
     try {
+      console.log('[IPC] Received llm.providers.save event');
+      console.log('[IPC] Settings to save:', JSON.stringify(event.payload.settings, null, 2));
+      console.log('[IPC] Providers count:', event.payload.settings.providers?.length || 0);
+      console.log('[IPC] Models count:', event.payload.settings.models?.length || 0);
+      
       saveLLMProviderSettings(event.payload.settings);
+      
+      console.log('[IPC] Settings saved successfully');
+      
       sessionManager.emitToWindow(windowId, {
         type: "llm.providers.saved",
         payload: { settings: event.payload.settings }
       });
     } catch (error) {
+      console.error('[IPC] Failed to save LLM providers:', error);
       sessionManager.emitToWindow(windowId, {
         type: "runner.error",
         payload: { message: `Failed to save LLM providers: ${error}` }
       });
     }
+    return;
+  }
+
+  if (event.type === "llm.models.test") {
+    const { provider } = event.payload;
+    
+    fetchModelsFromProvider(provider)
+      .then(models => {
+        sessionManager.emitToWindow(windowId, {
+          type: "llm.models.fetched",
+          payload: { providerId: provider.id, models }
+        });
+      })
+      .catch(error => {
+        console.error('[IPC] Failed to test provider connection:', error);
+        sessionManager.emitToWindow(windowId, {
+          type: "llm.models.error",
+          payload: { providerId: provider.id, message: String(error) }
+        });
+      });
     return;
   }
 

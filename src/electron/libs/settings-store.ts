@@ -14,7 +14,6 @@ export function loadApiSettings(): ApiSettings | null {
   try {
     const settingsPath = getSettingsPath();
     if (!existsSync(settingsPath)) {
-      console.log('[Settings] Settings file does not exist');
       return null;
     }
     
@@ -22,26 +21,17 @@ export function loadApiSettings(): ApiSettings | null {
     
     // Check if file is empty or contains only whitespace
     if (!raw || raw.trim() === '') {
-      console.log('[Settings] Settings file is empty');
       return null;
     }
     
     const settings = JSON.parse(raw) as ApiSettings;
-    
-    // Return null if apiKey is missing or invalid
-    if (!settings.apiKey || 
-        settings.apiKey.trim() === '' || 
-        settings.apiKey === 'null' || 
-        settings.apiKey === 'undefined') {
-      console.log('[Settings] API key is missing or invalid');
-      return null;
-    }
     
     // Set default permissionMode to 'ask' if not specified
     if (!settings.permissionMode) {
       settings.permissionMode = 'ask';
     }
     
+    // Return settings even if apiKey is empty (we now use LLM providers)
     return settings;
   } catch (error) {
     console.error("[Settings] Failed to load API settings:", error);
@@ -59,7 +49,12 @@ export function saveApiSettings(settings: ApiSettings): void {
       mkdirSync(dir, { recursive: true });
     }
     
+    console.log(`[Settings] Saving to: ${settingsPath}`);
+    console.log(`[Settings] tavilyApiKey: ${settings.tavilyApiKey ? 'set' : 'empty'}`);
+    console.log(`[Settings] webSearchProvider: ${settings.webSearchProvider}`);
+    
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
+    console.log(`[Settings] Saved successfully`);
   } catch (error) {
     console.error("Failed to save API settings:", error);
     throw new Error("Failed to save settings");

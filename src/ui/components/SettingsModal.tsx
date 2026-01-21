@@ -28,6 +28,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [model, setModel] = useState(currentSettings?.model || "");
   const [temperature, setTemperature] = useState(currentSettings?.temperature?.toString() || "0.3");
   const [tavilyApiKey, setTavilyApiKey] = useState(currentSettings?.tavilyApiKey || "");
+  const [enableTavilySearch, setEnableTavilySearch] = useState(currentSettings?.enableTavilySearch !== false);
   const [zaiApiKey, setZaiApiKey] = useState(currentSettings?.zaiApiKey || "");
   const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProvider>(currentSettings?.webSearchProvider || 'tavily');
   const [zaiApiUrl, setZaiApiUrl] = useState<ZaiApiUrl>(currentSettings?.zaiApiUrl || 'default');
@@ -58,6 +59,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setModel(currentSettings.model || "");
       setTemperature(currentSettings.temperature?.toString() || "0.3");
       setTavilyApiKey(currentSettings.tavilyApiKey || "");
+      setEnableTavilySearch(currentSettings.enableTavilySearch !== false);
       setZaiApiKey(currentSettings.zaiApiKey || "");
       setWebSearchProvider(currentSettings.webSearchProvider || 'tavily');
       setZaiApiUrl(currentSettings.zaiApiUrl || 'default');
@@ -70,14 +72,15 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableBrowserTools(currentSettings.enableBrowserTools || false);
       setEnableDuckDuckGo(currentSettings.enableDuckDuckGo || false);
       setEnableFetchTools(currentSettings.enableFetchTools || false);
-
-      // Load LLM provider settings
-      if (currentSettings.llmProviders) {
-        setLlmProviders(currentSettings.llmProviders.providers);
-        setLlmModels(currentSettings.llmProviders.models);
-      } else {
-        loadLlmProviders();
-      }
+    }
+    
+    // ALWAYS load LLM providers from separate file
+    console.log('[SettingsModal] Loading LLM providers from file...');
+    loadLlmProviders();
+    
+    // Load memory content if memory is enabled
+    if (currentSettings?.enableMemory) {
+      loadMemoryContent();
     }
   }, [currentSettings]);
 
@@ -173,12 +176,19 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       models: llmModels
     };
     
-    onSave({
+    console.log('[SettingsModal] Saving settings...');
+    console.log('[SettingsModal] Providers count:', llmProviders.length);
+    console.log('[SettingsModal] Models count:', llmModels.length);
+    console.log('[SettingsModal] Providers:', llmProviders);
+    console.log('[SettingsModal] Models:', llmModels);
+    
+    const settingsToSave = {
       apiKey: apiKey.trim(),
       baseUrl: baseUrl.trim(),
       model: model.trim(),
       temperature: !isNaN(tempValue) ? tempValue : 0.3,
       tavilyApiKey: tavilyApiKey.trim() || undefined,
+      enableTavilySearch,
       zaiApiKey: zaiApiKey.trim() || undefined,
       webSearchProvider,
       zaiApiUrl,
@@ -191,7 +201,20 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       enableDuckDuckGo,
       enableFetchTools,
       llmProviders: llmProviderSettings
+    };
+    
+    console.log('[SettingsModal] Full settings to save:', settingsToSave);
+    
+    // Save API settings
+    onSave(settingsToSave);
+    
+    // Also save LLM providers separately
+    console.log('[SettingsModal] Saving LLM providers separately...');
+    window.electron.sendClientEvent({
+      type: "llm.providers.save",
+      payload: { settings: llmProviderSettings }
     });
+    
     onClose();
   };
 
@@ -201,6 +224,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setModel("");
     setTemperature("0.3");
     setTavilyApiKey("");
+    setEnableTavilySearch(true);
     setZaiApiKey("");
     setWebSearchProvider('tavily');
     setZaiApiUrl('default');
@@ -294,11 +318,14 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                 onFetchModels={fetchProviderModels}
                 onReloadProviders={loadLlmProviders}
                 setLlmProviders={setLlmProviders}
+                setLlmModels={setLlmModels}
               />
             ) : activeTab === 'web-tools' ? (
               <WebToolsTab
                 tavilyApiKey={tavilyApiKey}
                 setTavilyApiKey={setTavilyApiKey}
+                enableTavilySearch={enableTavilySearch}
+                setEnableTavilySearch={setEnableTavilySearch}
                 zaiApiKey={zaiApiKey}
                 setZaiApiKey={setZaiApiKey}
                 webSearchProvider={webSearchProvider}
@@ -375,7 +402,8 @@ function LLMModelsTab({
   onDeleteProvider,
   onFetchModels,
   onReloadProviders,
-  setLlmProviders
+  setLlmProviders,
+  setLlmModels
 }: {
   providers: LLMProvider[];
   models: LLMModel[];
@@ -387,6 +415,7 @@ function LLMModelsTab({
   onFetchModels: (providerId: string) => Promise<void>;
   onReloadProviders: () => void;
   setLlmProviders: (providers: LLMProvider[]) => void;
+  setLlmModels: (models: LLMModel[]) => void;
 }) {
   const [showOnlyEnabled, setShowOnlyEnabled] = useState(false);
   const [providerSearchQueries, setProviderSearchQueries] = useState<Record<string, string>>({});
@@ -446,6 +475,7 @@ function LLMModelsTab({
             providers={providers}
             models={models}
             setLlmProviders={setLlmProviders}
+            setLlmModels={setLlmModels}
           />
         </div>
       </div>
@@ -616,11 +646,12 @@ function LLMModelsTab({
   );
 }
 
-function AddProviderButton({ onAdd, providers, models, setLlmProviders }: { 
+function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmModels }: { 
   onAdd: () => void; 
   providers: LLMProvider[]; 
   models: LLMModel[];
   setLlmProviders: (providers: LLMProvider[]) => void;
+  setLlmModels: (models: LLMModel[]) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [type, setType] = useState<LLMProviderType>('openai');
@@ -629,6 +660,9 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders }: {
   const [baseUrl, setBaseUrl] = useState('');
   const [zaiApiPrefix, setZaiApiPrefix] = useState<'default' | 'coding'>('default');
   const [error, setError] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testSuccess, setTestSuccess] = useState(false);
+  const [availableModels, setAvailableModels] = useState<LLMModel[]>([]);
 
   // Auto-fill base URL for Z.AI when prefix changes
   useEffect(() => {
@@ -647,6 +681,66 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders }: {
       setZaiApiPrefix('default');
     }
   }, [type]);
+
+  const handleTestConnection = async () => {
+    setError('');
+    setTestSuccess(false);
+    setTesting(true);
+    setAvailableModels([]);
+
+    if (!apiKey.trim()) {
+      setError('API key is required');
+      setTesting(false);
+      return;
+    }
+    if (type === 'openai' && !baseUrl.trim()) {
+      setError('Base URL is required');
+      setTesting(false);
+      return;
+    }
+
+    // Create temporary provider for testing
+    const tempProvider: LLMProvider = {
+      id: `temp-${Date.now()}`,
+      type,
+      name: name.trim() || 'Test Provider',
+      apiKey: apiKey.trim(),
+      baseUrl: type === 'openrouter' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
+      zaiApiPrefix: type === 'zai' ? zaiApiPrefix : undefined,
+      enabled: true,
+    };
+
+    // Send test request
+    window.electron.sendClientEvent({
+      type: "llm.models.test",
+      payload: { provider: tempProvider }
+    });
+
+    // Listen for response
+    const removeListener = window.electron.onServerEvent((event) => {
+      if (event.type === "llm.models.fetched" && event.payload.providerId === tempProvider.id) {
+        setTesting(false);
+        setTestSuccess(true);
+        setAvailableModels(event.payload.models);
+        setError('');
+        removeListener();
+      } else if (event.type === "llm.models.error" && event.payload.providerId === tempProvider.id) {
+        setTesting(false);
+        setTestSuccess(false);
+        setError(`Connection failed: ${event.payload.message}`);
+        removeListener();
+      }
+    });
+
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      if (testing) {
+        setTesting(false);
+        setError('Connection timeout - please check your settings');
+        removeListener();
+      }
+    }, 30000);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -676,14 +770,36 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders }: {
       enabled: true,
     };
 
+    console.log('[AddProvider] Creating new provider:', newProvider);
+    console.log('[AddProvider] Available models count:', availableModels.length);
+
+    // Prepare models with correct provider ID
+    const newModels = availableModels.length > 0 
+      ? availableModels.map(m => ({ 
+          ...m, 
+          providerId: newProvider.id, 
+          id: `${newProvider.id}::${m.id.split('::')[1] || m.id}` 
+        })) 
+      : [];
+
+    console.log('[AddProvider] Prepared models count:', newModels.length);
+    console.log('[AddProvider] Current providers:', providers);
+    console.log('[AddProvider] Current models:', models);
+
     // Save to settings
     const updatedSettings = {
       providers: [...providers, newProvider],
-      models: models
+      models: [...models, ...newModels]
     };
+
+    console.log('[AddProvider] Updated settings to send:', updatedSettings);
 
     // Immediately update local state
     setLlmProviders([...providers, newProvider]);
+    setLlmModels([...models, ...newModels]);
+
+    console.log('[AddProvider] Local state updated');
+    console.log('[AddProvider] Sending llm.providers.save event...');
 
     window.electron.sendClientEvent({
       type: "llm.providers.save",
@@ -697,6 +813,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders }: {
     setBaseUrl('');
     setZaiApiPrefix('default');
     setError('');
+    setTestSuccess(false);
+    setAvailableModels([]);
   };
 
   return (
@@ -729,32 +847,6 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders }: {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-ink-700 mb-2">
-                  Name
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g., My OpenAI"
-                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-ink-700 mb-2">
-                  API Key
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
-                />
-              </div>
-
               {type === 'openai' && (
                 <div>
                   <label className="block text-sm font-medium text-ink-700 mb-2">
@@ -785,26 +877,134 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders }: {
                   </select>
                 </div>
               )}
+
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-2">
+                  API Key
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                />
+              </div>
+              
+              {/* Test Connection Button */}
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testing || !apiKey.trim() || (type === 'openai' && !baseUrl.trim())}
+                className="w-full px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {testing ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Testing Connection...
+                  </>
+                ) : testSuccess ? (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Connection Successful
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Test Connection
+                  </>
+                )}
+              </button>
+
+              {/* Available Models Dropdown - shown after successful test */}
+              {testSuccess && availableModels.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-green-700 mb-2">
+                    ✓ Found {availableModels.length} model{availableModels.length !== 1 ? 's' : ''}
+                  </label>
+                  <div className="max-h-40 overflow-y-auto p-3 bg-green-50 border border-green-200 rounded-lg space-y-1">
+                    {availableModels.map((model) => (
+                      <div key={model.id} className="text-xs text-green-700 py-0.5">
+                        • {model.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Name field - only shown after successful test */}
+              {testSuccess && (
+                <div>
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
+                    Provider Name
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g., My OpenAI"
+                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  />
+                </div>
+              )}
               
               {error && (
                 <p className="text-sm text-red-600">{error}</p>
               )}
 
-              <div className="flex gap-3">
+              {testSuccess && (
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      setName('');
+                      setApiKey('');
+                      setBaseUrl('');
+                      setZaiApiPrefix('default');
+                      setError('');
+                      setTestSuccess(false);
+                      setAvailableModels([]);
+                    }}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-ink-600 bg-ink-50 rounded-lg hover:bg-ink-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!name.trim()}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
+                </div>
+              )}
+
+              {!testSuccess && (
                 <button
                   type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-ink-600 bg-ink-50 rounded-lg hover:bg-ink-100 transition-colors"
+                  onClick={() => {
+                    setIsOpen(false);
+                    setName('');
+                    setApiKey('');
+                    setBaseUrl('');
+                    setZaiApiPrefix('default');
+                    setError('');
+                    setTestSuccess(false);
+                    setAvailableModels([]);
+                  }}
+                  className="w-full px-4 py-2.5 text-sm font-medium text-ink-600 bg-ink-50 rounded-lg hover:bg-ink-100 transition-colors"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition-colors"
-                >
-                  Add
-                </button>
-              </div>
+              )}
             </form>
           </div>
         </div>
@@ -816,6 +1016,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders }: {
 function WebToolsTab({
   tavilyApiKey,
   setTavilyApiKey,
+  enableTavilySearch,
+  setEnableTavilySearch,
   zaiApiKey,
   setZaiApiKey,
   webSearchProvider,
@@ -881,6 +1083,28 @@ function WebToolsTab({
           <p className="mt-1 text-xs text-ink-500">
             Получите API ключ на <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" className="text-ink-700 hover:underline">tavily.com</a>
           </p>
+          
+          {tavilyApiKey && (
+            <div className="mt-4 flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-ink-700">Enable Web Search</span>
+                <p className="text-xs text-ink-500">Use Tavily for search_web and extract_page tools</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEnableTavilySearch(!enableTavilySearch)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  enableTavilySearch ? "bg-accent" : "bg-ink-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    enableTavilySearch ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1107,7 +1331,12 @@ function MemoryModeTab({
             <input
               type="checkbox"
               checked={enableMemory}
-              onChange={(e) => setEnableMemory(e.target.checked)}
+              onChange={(e) => {
+                setEnableMemory(e.target.checked);
+                if (e.target.checked) {
+                  loadMemoryContent();
+                }
+              }}
               className="sr-only peer"
             />
             <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>

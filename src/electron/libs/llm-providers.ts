@@ -7,7 +7,7 @@ function generateProviderId(type: LLMProviderType, name: string): string {
 
 // Helper to generate model ID
 function generateModelId(providerId: string, modelName: string): string {
-  return `${providerId}-${modelName.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
+  return `${providerId}::${modelName}`;
 }
 
 // Fetch models from OpenAI-compatible API
@@ -127,7 +127,7 @@ export async function fetchModelsFromProvider(provider: LLMProvider): Promise<LL
     providerId: provider.id,
     providerType: provider.type,
     description: model.description,
-    enabled: false, // Default to disabled, user must enable
+    enabled: true, // Default to enabled, user can disable if needed
     contextLength: model.contextLength,
   }));
 

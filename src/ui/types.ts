@@ -113,6 +113,7 @@ export type ApiSettings = {
   model: string;
   temperature?: number;  // Optional temperature for vLLM/OpenAI-compatible APIs
   tavilyApiKey?: string; // Optional Tavily API key for web search
+  enableTavilySearch?: boolean; // Enable/disable Tavily search even with API key
   zaiApiKey?: string; // Optional Z.AI API key for web search
   webSearchProvider?: WebSearchProvider; // Web search provider: 'tavily' or 'zai'
   zaiApiUrl?: ZaiApiUrl; // Z.AI API URL variant: 'default' or 'coding'
@@ -168,7 +169,7 @@ export interface LLMProviderSettings {
 export type ServerEvent =
   | { type: "stream.message"; payload: { sessionId: string; message: StreamMessage; threadId?: string } }
   | { type: "stream.user_prompt"; payload: { sessionId: string; prompt: string; threadId?: string } }
-  | { type: "session.status"; payload: { sessionId: string; status: SessionStatus; title?: string; cwd?: string; error?: string; model?: string; threadId?: string } }
+  | { type: "session.status"; payload: { sessionId: string; status: SessionStatus; title?: string; cwd?: string; error?: string; model?: string; temperature?: number; threadId?: string } }
   | { type: "session.list"; payload: { sessions: SessionInfo[] } }
   | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number; todos?: TodoItem[]; model?: string; fileChanges?: FileChange[] } }
   | { type: "session.deleted"; payload: { sessionId: string } }
@@ -195,12 +196,13 @@ export type ServerEvent =
 
 // Client -> Server events
 export type ClientEvent =
-  | { type: "session.start"; payload: { title: string; prompt: string; cwd?: string; model?: string; allowedTools?: string; threadId?: string } }
+  | { type: "session.start"; payload: { title: string; prompt: string; cwd?: string; model?: string; allowedTools?: string; threadId?: string; temperature?: number } }
   | { type: "session.continue"; payload: { sessionId: string; prompt: string } }
   | { type: "session.stop"; payload: { sessionId: string; } }
   | { type: "session.delete"; payload: { sessionId: string; } }
   | { type: "session.pin"; payload: { sessionId: string; isPinned: boolean; } }
   | { type: "session.update-cwd"; payload: { sessionId: string; cwd: string; } }
+  | { type: "session.update"; payload: { sessionId: string; model?: string; temperature?: number; sendTemperature?: boolean; title?: string; } }
   | { type: "session.list" }
   | { type: "session.history"; payload: { sessionId: string; } }
   | { type: "permission.response"; payload: { sessionId: string; toolUseId: string; result: PermissionResult; } }
@@ -219,4 +221,5 @@ export type ClientEvent =
   | { type: "llm.providers.get" }
   | { type: "llm.providers.save"; payload: { settings: LLMProviderSettings } }
   | { type: "llm.models.fetch"; payload: { providerId: string } }
+  | { type: "llm.models.test"; payload: { provider: LLMProvider } }
   | { type: "llm.models.check" };

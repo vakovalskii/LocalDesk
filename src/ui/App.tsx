@@ -5,6 +5,7 @@ import { useAppStore } from "./store/useAppStore";
 import type { ServerEvent, ApiSettings } from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { StartSessionModal } from "./components/StartSessionModal";
+import { SessionEditModal } from "./components/SessionEditModal";
 import { TaskDialog } from "./components/TaskDialog";
 import { SettingsModal } from "./components/SettingsModal";
 import { FileBrowser } from "./components/FileBrowser";
@@ -24,11 +25,16 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [showSessionEditModal, setShowSessionEditModal] = useState(false);
   const [apiSettings, setApiSettings] = useState<ApiSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings have been loaded from backend
   const partialUpdateScheduledRef = useRef(false);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
+  const selectedTemperature = useAppStore((s) => s.selectedTemperature);
+  const setSelectedTemperature = useAppStore((s) => s.setSelectedTemperature);
+  const sendTemperature = useAppStore((s) => s.sendTemperature);
+  const setSendTemperature = useAppStore((s) => s.setSendTemperature);
   const availableModels = useAppStore((s) => s.availableModels);
   const llmModels = useAppStore((s) => s.llmModels);
 
@@ -125,17 +131,27 @@ function App() {
       sendEvent({ type: "session.list" });
       sendEvent({ type: "settings.get" });
       sendEvent({ type: "models.get" });
+      sendEvent({ type: "llm.providers.get" });
     }
   }, [connected, sendEvent]);
 
-  // Check if API key is configured on first load
+  // Check if API key or LLM providers are configured on first load
   useEffect(() => {
     // Wait until settings are loaded from backend
     if (!settingsLoaded) return;
     
-    // Check if settings are null (file doesn't exist or empty)
+    // Check if we have any enabled models from LLM providers (enabled !== false)
+    const hasEnabledModels = llmModels.some(m => m.enabled !== false);
+    
+    // If we have enabled models from LLM providers, we're good - don't open Settings
+    if (hasEnabledModels) {
+      console.log('[App] LLM providers with enabled models found:', llmModels.length, 'models');
+      return;
+    }
+    
+    // No LLM models - check legacy API settings
     if (apiSettings === null) {
-      console.log('[App] Settings are null (file empty or missing), opening Settings modal');
+      console.log('[App] No settings or LLM providers found, opening Settings modal');
       setShowStartModal(false);
       setShowSettingsModal(true);
       return;
@@ -148,13 +164,13 @@ function App() {
                           apiSettings.apiKey !== 'undefined';
     
     if (!hasValidApiKey) {
-      console.log('[App] No valid API key found, opening Settings modal');
+      console.log('[App] No valid API key or enabled LLM models found, opening Settings modal');
       setShowStartModal(false);
       setShowSettingsModal(true);
     } else {
-      console.log('[App] Valid API key found, ready to use');
+      console.log('[App] Valid API key found');
     }
-  }, [apiSettings, settingsLoaded, setShowStartModal]);
+  }, [apiSettings, settingsLoaded, llmModels, setShowStartModal]);
 
   useEffect(() => {
     if (!activeSessionId || !connected) return;
@@ -291,19 +307,23 @@ function App() {
           className="flex items-center justify-between h-12 min-h-[48px] border-b border-ink-900/10 bg-surface-cream select-none px-4 gap-2"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {(activeSession?.model || apiSettings?.model) && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-info/10 border border-info/20">
-                <svg className="w-3.5 h-3.5 text-info flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M13 7H7v6h6V7z"/>
-                  <path fillRule="evenodd" d="M7 2a1 1 0 012 0v1h2V2a1 1 0 112 0v1h2a2 2 0 012 2v2h1a1 1 0 110 2h-1v2h1a1 1 0 110 2h-1v2a2 2 0 01-2 2h-2v1a1 1 0 11-2 0v-1H9v1a1 1 0 11-2 0v-1H5a2 2 0 01-2-2v-2H2a1 1 0 110-2h1V9H2a1 1 0 010-2h1V5a2 2 0 012-2h2V2zM5 5h10v10H5V5z" clipRule="evenodd"/>
-                </svg>
-                <span className="text-xs font-medium text-info truncate max-w-[150px]">{activeSession?.model || apiSettings?.model}</span>
-              </div>
-            )}
-          </div>
+          <div className="flex items-center gap-2 flex-shrink-0" />
           <span className="text-sm font-medium text-ink-700 truncate flex-shrink min-w-0">{activeSession?.title || "LocalDesk"}</span>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Edit session button */}
+            {activeSessionId && (
+              <button
+                onClick={() => setShowSessionEditModal(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-ink-900/5 border border-ink-900/10 text-ink-600 rounded-lg hover:bg-ink-100 transition-colors"
+                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                title="Edit session settings"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+            )}
             {/* Auto scroll toggle */}
             <button
               onClick={() => setAutoScrollEnabled(!autoScrollEnabled)}
@@ -473,6 +493,11 @@ function App() {
           availableModels={availableModels}
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
+          llmModels={llmModels}
+          temperature={selectedTemperature}
+          onTemperatureChange={setSelectedTemperature}
+          sendTemperature={sendTemperature}
+          onSendTemperatureChange={setSendTemperature}
         />
       )}
 
@@ -492,6 +517,25 @@ function App() {
           currentSettings={apiSettings}
           onSave={handleSaveSettings}
           onClose={() => setShowSettingsModal(false)}
+        />
+      )}
+
+      {showSessionEditModal && activeSessionId && activeSession && (
+        <SessionEditModal
+          currentModel={activeSession.model}
+          currentTemperature={activeSession.temperature}
+          currentTitle={activeSession.title}
+          llmModels={llmModels}
+          onSave={(updates) => {
+            sendEvent({
+              type: "session.update",
+              payload: {
+                sessionId: activeSessionId,
+                ...updates
+              }
+            });
+          }}
+          onClose={() => setShowSessionEditModal(false)}
         />
       )}
 

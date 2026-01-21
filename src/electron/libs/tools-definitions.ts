@@ -17,6 +17,9 @@ const DUCKDUCKGO_TOOLS = ['search', 'search_news', 'search_images'];
 // Fetch/HTTP tool names
 const FETCH_TOOLS = ['fetch', 'fetch_json', 'download', 'fetch_html'];
 
+// Tavily/Z.AI web search tools
+const WEB_SEARCH_TOOLS = ['search_web', 'extract_page'];
+
 // Get tools based on settings
 export function getTools(settings: ApiSettings | null) {
   let tools = [...ALL_TOOL_DEFINITIONS];
@@ -51,7 +54,15 @@ export function getTools(settings: ApiSettings | null) {
     tools = tools.filter(tool => !FETCH_TOOLS.includes(tool.function.name));
   }
   
-  console.log(`[getTools] Active tools (${tools.length}): ${tools.map(t => t.function.name).join(', ')}`);
+  // Filter out web search tools if disabled or no API key configured
+  const tavilyEnabled = settings?.enableTavilySearch !== false && settings?.tavilyApiKey;
+  const zaiEnabled = settings?.zaiApiKey;
+  const hasWebSearch = tavilyEnabled || zaiEnabled;
+  
+  if (!hasWebSearch) {
+    tools = tools.filter(tool => !WEB_SEARCH_TOOLS.includes(tool.function.name));
+  }
+  
   return tools;
 }
 

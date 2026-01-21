@@ -21,6 +21,8 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
   const setGlobalError = useAppStore((state) => state.setGlobalError);
   const selectedModel = useAppStore((state) => state.selectedModel);
   const setSelectedModel = useAppStore((state) => state.setSelectedModel);
+  const selectedTemperature = useAppStore((state) => state.selectedTemperature);
+  const sendTemperature = useAppStore((state) => state.sendTemperature);
 
   const activeSession = activeSessionId ? sessions[activeSessionId] : undefined;
   const isRunning = activeSession?.status === "running";
@@ -56,7 +58,8 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
           prompt: trimmedPrompt, // Can be empty string
           cwd: cwd.trim() || undefined,
           allowedTools: DEFAULT_ALLOWED_TOOLS,
-          model: selectedModel || undefined
+          model: selectedModel || undefined,
+          temperature: sendTemperature ? selectedTemperature : undefined
         }
       });
       // Clear selected model after starting session
@@ -69,7 +72,7 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
       sendEvent({ type: "session.continue", payload: { sessionId: activeSessionId, prompt: trimmedPrompt } });
     }
     setPrompt("");
-  }, [activeSession, activeSessionId, cwd, prompt, sendEvent, setGlobalError, setPendingStart, setPrompt, selectedModel, setSelectedModel]);
+  }, [activeSession, activeSessionId, cwd, prompt, sendEvent, setGlobalError, setPendingStart, setPrompt, selectedModel, setSelectedModel, selectedTemperature]);
 
   const handleStop = useCallback(() => {
     if (!activeSessionId) return;

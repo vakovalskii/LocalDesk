@@ -19,7 +19,7 @@ Your primary goal is to help users by:
 All tools follow snake_case naming convention: verb_noun
 
 **File Operations:**
-- `read_file` - Read text file contents
+- `read_file` - Read text file contents (use start_line/end_line/max_lines for large files, max 5MB)
 - `write_file` - Create new files
 - `edit_file` - Edit existing files (search and replace)
 - `search_files` - Find files by glob pattern (e.g., *.ts, src/**/*.js)

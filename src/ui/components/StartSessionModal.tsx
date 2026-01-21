@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import type { ApiSettings } from "../types";
+import type { ApiSettings, LLMModel } from "../types";
 
 interface StartSessionModalProps {
   cwd: string;
@@ -14,6 +14,11 @@ interface StartSessionModalProps {
   availableModels: Array<{ id: string; name: string; description?: string }>;
   selectedModel: string | null;
   onModelChange: (model: string | null) => void;
+  llmModels?: LLMModel[];
+  temperature: number;
+  onTemperatureChange: (temp: number) => void;
+  sendTemperature?: boolean;
+  onSendTemperatureChange?: (send: boolean) => void;
 }
 
 export function StartSessionModal({
@@ -27,13 +32,54 @@ export function StartSessionModal({
   apiSettings,
   availableModels,
   selectedModel,
-  onModelChange
+  onModelChange,
+  llmModels = [],
+  temperature,
+  onTemperatureChange,
+  sendTemperature = true,
+  onSendTemperatureChange
 }: StartSessionModalProps) {
   const [recentCwds, setRecentCwds] = useState<string[]>([]);
+  const [modelSearch, setModelSearch] = useState('');
 
   useEffect(() => {
     window.electron.getRecentCwds().then(setRecentCwds).catch(console.error);
   }, []);
+
+  // Combine available models from API and LLM providers
+  const allAvailableModels = (() => {
+    const models: Array<{ id: string; name: string; description?: string }> = [];
+    
+    // Add legacy API models
+    availableModels.forEach(model => {
+      models.push({
+        id: model.id,
+        name: model.name,
+        description: model.description
+      });
+    });
+    
+    // Add LLM provider models (all except explicitly disabled)
+    const enabledLlmModels = llmModels.filter(m => m.enabled !== false);
+    
+    enabledLlmModels.forEach(model => {
+      models.push({
+        id: model.id,
+        name: model.name,
+        description: `${model.providerType} | ${model.description || ''}`
+      });
+    });
+    
+    return models;
+  })();
+
+  // Filter models based on search
+  const filteredModels = modelSearch.trim() === '' 
+    ? allAvailableModels 
+    : allAvailableModels.filter(model => 
+        model.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
+        model.description?.toLowerCase().includes(modelSearch.toLowerCase())
+      );
 
   // Set default model to apiSettings.model if no model is selected
   useEffect(() => {
@@ -47,7 +93,18 @@ export function StartSessionModal({
     if (result) onCwdChange(result);
   };
 
-  const displayModel = selectedModel || apiSettings?.model || "Select model...";
+  // Find the selected model in the list to display its name instead of ID
+  const displayModel = (() => {
+    if (selectedModel) {
+      const found = allAvailableModels.find(m => m.id === selectedModel);
+      return found ? found.name : selectedModel;
+    }
+    if (apiSettings?.model) {
+      const found = allAvailableModels.find(m => m.id === apiSettings.model);
+      return found ? found.name : apiSettings.model;
+    }
+    return "Select model...";
+  })();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/20 px-4 py-8 backdrop-blur-sm">
@@ -74,27 +131,88 @@ export function StartSessionModal({
                 </svg>
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>
-                <DropdownMenu.Content className="z-50 min-w-[300px] max-w-[400px] rounded-xl border border-ink-900/10 bg-white p-1 shadow-lg max-h-60 overflow-y-auto" sideOffset={8}>
-                  {availableModels.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-muted">No models available. Check your API settings.</div>
-                  ) : (
-                    availableModels.map((model) => (
-                      <DropdownMenu.Item
-                        key={model.id}
-                        className="flex flex-col cursor-pointer rounded-lg px-3 py-2 text-sm text-ink-700 outline-none hover:bg-ink-900/5"
-                        onSelect={() => onModelChange(model.id)}
-                      >
-                        <span className="font-medium truncate">{model.name}</span>
-                        {model.description && (
-                          <span className="text-xs text-muted truncate">{model.description}</span>
-                        )}
-                      </DropdownMenu.Item>
-                    ))
-                  )}
+                <DropdownMenu.Content className="z-50 min-w-[300px] max-w-[400px] rounded-xl border border-ink-900/10 bg-white shadow-lg" sideOffset={8}>
+                  {/* Search input */}
+                  <div className="p-2 border-b border-ink-900/10">
+                    <input
+                      type="text"
+                      placeholder="Search models..."
+                      value={modelSearch}
+                      onChange={(e) => setModelSearch(e.target.value)}
+                      className="w-full rounded-lg border border-ink-900/10 bg-surface-secondary px-3 py-2 text-sm text-ink-800 placeholder:text-muted-light focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  
+                  {/* Models list */}
+                  <div className="max-h-60 overflow-y-auto p-1">
+                    {allAvailableModels.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-muted">No models available. Check your API settings.</div>
+                    ) : filteredModels.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-muted">No models found matching "{modelSearch}"</div>
+                    ) : (
+                      filteredModels.map((model) => (
+                        <DropdownMenu.Item
+                          key={model.id}
+                          className="flex flex-col cursor-pointer rounded-lg px-3 py-2 text-sm text-ink-700 outline-none hover:bg-ink-900/5"
+                          onSelect={() => {
+                            onModelChange(model.id);
+                            setModelSearch('');
+                          }}
+                        >
+                          <span className="font-medium truncate">{model.name}</span>
+                          {model.description && (
+                            <span className="text-xs text-muted truncate">{model.description}</span>
+                          )}
+                        </DropdownMenu.Item>
+                      ))
+                    )}
+                  </div>
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
           </label>
+
+          {/* Temperature */}
+          <div className="grid gap-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted">Temperature</span>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sendTemperature !== false}
+                    onChange={(e) => onSendTemperatureChange?.(e.target.checked)}
+                    className="w-3 h-3 rounded border-ink-300 text-accent focus:ring-accent/20"
+                  />
+                  <span className="text-[10px] text-muted">send</span>
+                </label>
+              </div>
+              <span className="text-xs text-ink-600 font-mono">{temperature.toFixed(1)}</span>
+            </div>
+            <div className="relative">
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={temperature}
+                onChange={(e) => onTemperatureChange(parseFloat(e.target.value))}
+                disabled={sendTemperature === false}
+                className="w-full h-2 bg-ink-100 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
+                style={{
+                  background: sendTemperature !== false 
+                    ? `linear-gradient(to right, #f59e0b ${(temperature / 2) * 100}%, #e5e5e5 ${(temperature / 2) * 100}%)`
+                    : '#e5e5e5'
+                }}
+              />
+            </div>
+            <p className="text-[10px] text-muted-light">
+              Lower = more focused, Higher = more creative. Disable for models like GPT-5.
+            </p>
+          </div>
+
           <label className="grid gap-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted">Workspace Folder</span>

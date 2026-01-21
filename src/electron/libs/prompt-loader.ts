@@ -25,13 +25,14 @@ const getOSName = () => {
 
 const getShellCommands = () => {
   if (isWindows) {
+    // PowerShell commands (NOT cmd.exe)
     return {
-      listFiles: 'dir',
-      viewFile: 'type',
-      changeDir: 'cd',
-      currentDir: 'cd',
-      findFiles: 'dir /s /b',
-      searchText: 'findstr /s /i'
+      listFiles: 'Get-ChildItem',              // or: ls, dir (aliases)
+      viewFile: 'Get-Content',                 // or: cat, type (aliases)
+      changeDir: 'Set-Location',               // or: cd (alias)
+      currentDir: 'Get-Location',              // or: pwd (alias)
+      findFiles: 'Get-ChildItem -Recurse -Name', // find files recursively
+      searchText: 'Select-String -Pattern'     // grep equivalent
     };
   }
   // Unix-like (macOS, Linux)

@@ -137,6 +137,56 @@ export class ToolExecutor {
     }
   }
 
+  // Update settings dynamically (e.g., when user adds Tavily API key)
+  updateSettings(newSettings: ApiSettings | null): void {
+    this.apiSettings = newSettings;
+    
+    const provider = newSettings?.webSearchProvider || "tavily";
+    const zaiApiUrl = newSettings?.zaiApiUrl || "default";
+
+    // Re-initialize web search tool
+    if (provider === "tavily" && newSettings?.tavilyApiKey) {
+      this.webSearchTool = new WebSearchTool(
+        newSettings.tavilyApiKey,
+        "tavily",
+        "default",
+      );
+    } else if (provider === "zai" && newSettings?.zaiApiKey) {
+      this.webSearchTool = new WebSearchTool(
+        newSettings.zaiApiKey,
+        "zai",
+        zaiApiUrl,
+      );
+    } else {
+      this.webSearchTool = new WebSearchTool(null, "tavily", "default");
+    }
+
+    // Re-initialize page extraction tool
+    if (provider === "tavily" && newSettings?.tavilyApiKey) {
+      this.extractPageTool = new ExtractPageContentTool(
+        newSettings.tavilyApiKey,
+        "tavily",
+      );
+    } else {
+      this.extractPageTool = new ExtractPageContentTool(null, "tavily");
+    }
+
+    // Re-initialize ZaiReader
+    const zaiReaderApiUrl = newSettings?.zaiReaderApiUrl || "default";
+    if (newSettings?.enableZaiReader) {
+      if (newSettings?.zaiApiKey) {
+        this.zaiReaderTool = new ZaiReaderTool(
+          newSettings.zaiApiKey,
+          zaiReaderApiUrl,
+        );
+      } else {
+        this.zaiReaderTool = new ZaiReaderTool(null, "default");
+      }
+    } else {
+      this.zaiReaderTool = null;
+    }
+  }
+
   // Security: Check if path is within allowed directory (enhanced protection)
   private isPathSafe(filePath: string): boolean {
     try {

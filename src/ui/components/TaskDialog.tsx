@@ -89,8 +89,8 @@ export function TaskDialog({
       });
     });
     
-    // Add LLM provider models (only enabled ones)
-    llmModels.filter(m => m.enabled).forEach(model => {
+    // Add LLM provider models (all except explicitly disabled)
+    llmModels.filter(m => m.enabled !== false).forEach(model => {
       models.push({
         id: model.id,
         name: model.name,

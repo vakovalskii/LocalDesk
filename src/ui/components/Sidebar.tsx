@@ -43,6 +43,16 @@ export function Sidebar({
     return num.toLocaleString("ru-RU", { useGrouping: true });
   };
 
+  // Extract model name from full ID (provider::model -> model)
+  const getModelDisplayName = (modelId: string | undefined): string => {
+    if (!modelId) return '';
+    // If it contains ::, take the part after it
+    if (modelId.includes('::')) {
+      return modelId.split('::')[1] || modelId;
+    }
+    return modelId;
+  };
+
   const sessionList = useMemo(() => {
     let sessionsList = Object.values(sessions);
     
@@ -475,7 +485,7 @@ export function Sidebar({
                     <span className="truncate">{formatCwd(session.cwd)}</span>
                     {(session.model || apiSettings?.model) && (
                       <span className="text-[10px] text-info/80 bg-info/10 px-1.5 py-0.5 rounded whitespace-nowrap ml-2">
-                        {session.model || apiSettings?.model}
+                        {getModelDisplayName(session.model || apiSettings?.model)}
                       </span>
                     )}
                   </div>

@@ -16,6 +16,15 @@ export function MultiThreadPanel({
   onDeleteTask,
   sendEvent
 }: MultiThreadPanelProps) {
+  // Extract model name from full ID (provider::model -> model)
+  const getModelDisplayName = (modelId: string | undefined): string => {
+    if (!modelId) return 'Unknown';
+    // If it contains ::, take the part after it
+    if (modelId.includes('::')) {
+      return modelId.split('::')[1] || modelId;
+    }
+    return modelId;
+  };
   const sortedTasks = useMemo(() => {
     return Object.values(multiThreadTasks).sort((a, b) => b.updatedAt - a.updatedAt);
   }, [multiThreadTasks]);
@@ -194,7 +203,7 @@ export function MultiThreadPanel({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1">
                             <span className={`text-xs truncate ${isSummaryThread ? 'text-purple-700 font-medium' : 'text-ink-600'}`}>
-                              {isSummaryThread ? '📋 Summary' : thread.model || 'Unknown'}
+                              {isSummaryThread ? '📋 Summary' : getModelDisplayName(thread.model)}
                             </span>
                           </div>
                         </div>

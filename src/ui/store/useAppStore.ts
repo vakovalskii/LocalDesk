@@ -14,6 +14,7 @@ export type SessionView = {
   status: SessionStatus;
   cwd?: string;
   model?: string;
+  temperature?: number;
   isPinned?: boolean;
   messages: StreamMessage[];
   permissionRequests: PermissionRequest[];
@@ -39,6 +40,8 @@ interface AppState {
   historyRequested: Set<string>;
   autoScrollEnabled: boolean;
   selectedModel: string | null;
+  selectedTemperature: number;
+  sendTemperature: boolean;
   availableModels: Array<{ id: string; name: string; description?: string }>;
   multiThreadTasks: Record<string, MultiThreadTask>;
   llmProviders: LLMProvider[];
@@ -57,6 +60,8 @@ interface AppState {
   handleServerEvent: (event: ServerEvent) => void;
   setAutoScrollEnabled: (enabled: boolean) => void;
   setSelectedModel: (model: string | null) => void;
+  setSelectedTemperature: (temp: number) => void;
+  setSendTemperature: (send: boolean) => void;
   setAvailableModels: (models: Array<{ id: string; name: string; description?: string }>) => void;
   deleteMultiThreadTask: (taskId: string) => void;
   setLLMProviders: (providers: LLMProvider[]) => void;
@@ -80,6 +85,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   historyRequested: new Set(),
   autoScrollEnabled: true,
   selectedModel: null,
+  selectedTemperature: 0.3,
+  sendTemperature: true,
   availableModels: [],
   multiThreadTasks: {},
   llmProviders: [],
@@ -94,6 +101,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveSessionId: (id) => set({ activeSessionId: id }),
   setAutoScrollEnabled: (autoScrollEnabled) => set({ autoScrollEnabled }),
   setSelectedModel: (selectedModel) => set({ selectedModel }),
+  setSelectedTemperature: (selectedTemperature) => set({ selectedTemperature }),
+  setSendTemperature: (sendTemperature) => set({ sendTemperature }),
   setAvailableModels: (availableModels) => set({ availableModels }),
   setLLMProviders: (llmProviders) => set({ llmProviders }),
   setLLMModels: (llmModels) => set({ llmModels }),
@@ -213,7 +222,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       case "session.status": {
-        const { sessionId, status, title, cwd, model } = event.payload;
+        const { sessionId, status, title, cwd, model, temperature } = event.payload;
         const isPendingStart = state.pendingStart;
 
         set((state) => {
@@ -227,6 +236,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 title: title ?? existing.title,
                 cwd: cwd ?? existing.cwd,
                 model: model ?? existing.model,
+                temperature: temperature ?? existing.temperature,
                 updatedAt: Date.now(),
                 // Mark as hydrated if this is a new session we just started
                 // This prevents session.history from overwriting new messages
