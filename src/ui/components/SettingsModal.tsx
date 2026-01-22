@@ -797,7 +797,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
     setTesting(true);
     setAvailableModels([]);
 
-    if (!apiKey.trim()) {
+    // API key not required for Claude Code
+    if (type !== 'claude-code' && !apiKey.trim()) {
       setError('API key is required');
       setTesting(false);
       return;
@@ -813,8 +814,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
       id: `temp-${Date.now()}`,
       type,
       name: name.trim() || 'Test Provider',
-      apiKey: apiKey.trim(),
-      baseUrl: type === 'openrouter' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
+      apiKey: type === 'claude-code' ? '' : apiKey.trim(),
+      baseUrl: type === 'openrouter' || type === 'claude-code' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
       zaiApiPrefix: type === 'zai' ? zaiApiPrefix : undefined,
       enabled: true,
     };
@@ -859,7 +860,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
       setError('Provider name is required');
       return;
     }
-    if (!apiKey.trim()) {
+    // API key not required for Claude Code
+    if (type !== 'claude-code' && !apiKey.trim()) {
       setError('API key is required');
       return;
     }
@@ -873,8 +875,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
       id: `${type}-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
       type,
       name: name.trim(),
-      apiKey: apiKey.trim(),
-      baseUrl: type === 'openrouter' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
+      apiKey: type === 'claude-code' ? '' : apiKey.trim(),
+      baseUrl: type === 'openrouter' || type === 'claude-code' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
       zaiApiPrefix: type === 'zai' ? zaiApiPrefix : undefined,
       enabled: true,
     };
@@ -953,6 +955,7 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
                   <option value="openai">OpenAI</option>
                   <option value="openrouter">OpenRouter</option>
                   <option value="zai">Z.AI</option>
+                  <option value="claude-code">Claude Code (Subscription)</option>
                 </select>
               </div>
 
@@ -987,24 +990,37 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
                 </div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-ink-700 mb-2">
-                  API Key
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
-                />
-              </div>
+              {/* API Key - not needed for Claude Code */}
+              {type !== 'claude-code' && (
+                <div>
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
+                    API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-..."
+                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  />
+                </div>
+              )}
+
+              {/* Claude Code info */}
+              {type === 'claude-code' && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-800">
+                    <strong>Claude Code Subscription</strong><br />
+                    Uses your Claude Code CLI subscription. Make sure you're logged in via <code className="bg-amber-100 px-1 rounded">claude login</code>.
+                  </p>
+                </div>
+              )}
               
               {/* Test Connection Button */}
               <button
                 type="button"
                 onClick={handleTestConnection}
-                disabled={testing || !apiKey.trim() || (type === 'openai' && !baseUrl.trim())}
+                disabled={testing || (type !== 'claude-code' && !apiKey.trim()) || (type === 'openai' && !baseUrl.trim())}
                 className="w-full px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {testing ? (

@@ -1,7 +1,7 @@
 import { BrowserWindow, powerMonitor, shell } from "electron";
 import type { ClientEvent, ServerEvent, MultiThreadTask } from "./types.js";
-// import { runClaude, type RunnerHandle } from "./libs/runner.js"; // Old Claude SDK runner
-import { runClaude, type RunnerHandle } from "./libs/runner-openai.js"; // New OpenAI SDK runner
+import { runClaude as runClaudeSDK, type RunnerHandle } from "./libs/runner.js"; // Claude Code SDK runner (subscription)
+import { runClaude as runOpenAI } from "./libs/runner-openai.js"; // OpenAI SDK runner
 import { SessionStore } from "./libs/session-store.js";
 import type { SessionHistoryPage } from "./libs/session-store.js";
 import { SchedulerStore } from "./libs/scheduler-store.js";
@@ -38,6 +38,20 @@ app.on("ready", () => {
 // Make sessionStore and schedulerStore globally available for runner
 (global as any).sessionStore = sessions;
 (global as any).schedulerStore = schedulerStore;
+
+/**
+ * Select appropriate runner based on model/provider type
+ * - claude-code:: prefix -> use Claude Code SDK (subscription)
+ * - otherwise -> use OpenAI SDK compatible runner
+ */
+function selectRunner(model: string | undefined) {
+  if (model?.startsWith('claude-code::')) {
+    console.log('[IPC] Using Claude Code SDK runner for model:', model);
+    return runClaudeSDK;
+  }
+  console.log('[IPC] Using OpenAI SDK runner for model:', model);
+  return runOpenAI;
+}
 
 // Broadcast function for events without sessionId (session.list, models.loaded, etc.)
 function broadcast(event: ServerEvent) {
@@ -220,6 +234,7 @@ Format your response clearly with sections.`;
   });
 
   try {
+    const runClaude = selectRunner(session.model);
     const handle = await runClaude({
       prompt: summaryPrompt,
       session,
@@ -344,7 +359,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
       payload: { sessionId: session.id, prompt: event.payload.prompt }
     });
 
-    runClaude({
+    selectRunner(session.model)({
       prompt: event.payload.prompt,
       session,
       resumeSessionId: session.claudeSessionId,
@@ -438,7 +453,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
       });
     }
 
-    runClaude({
+    selectRunner(session.model)({
       prompt: event.payload.prompt,
       session,
       resumeSessionId: isFirstRun ? undefined : session.claudeSessionId,
@@ -621,7 +636,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
     });
 
     // Re-run from this point
-    runClaude({
+    selectRunner(session.model)({
       prompt: newPrompt,
       session,
       resumeSessionId: session.claudeSessionId,
@@ -862,7 +877,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
             payload: { sessionId: threadId, threadId, prompt: consensusPrompt }
           });
 
-          runClaude({
+          selectRunner(thread.model)({
             prompt: consensusPrompt,
             session: thread,
             resumeSessionId: thread.claudeSessionId,
@@ -899,7 +914,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
             payload: { sessionId: threadId, threadId, prompt: taskPrompt }
           });
 
-          runClaude({
+          selectRunner(thread.model)({
             prompt: taskPrompt,
             session: thread,
             resumeSessionId: thread.claudeSessionId,
@@ -963,7 +978,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
             payload: { sessionId: threadId, threadId, prompt: consensusPrompt }
           });
 
-          runClaude({
+          selectRunner(thread.model)({
             prompt: consensusPrompt,
             session: thread,
             resumeSessionId: thread.claudeSessionId,
@@ -1000,7 +1015,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
             payload: { sessionId: threadId, threadId, prompt: taskPrompt }
           });
 
-          runClaude({
+          selectRunner(thread.model)({
             prompt: taskPrompt,
             session: thread,
             resumeSessionId: thread.claudeSessionId,
@@ -1409,7 +1424,7 @@ async function executeScheduledTask(task: any) {
 
   try {
     // Run the prompt
-    await runClaude({
+    await selectRunner(session.model)({
       prompt: task.prompt,
       session,
       onEvent: emit

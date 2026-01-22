@@ -20,6 +20,7 @@ export type RunnerOptions = {
 
 export type RunnerHandle = {
   abort: () => void;
+  resolvePermission: (toolUseId: string, approved: boolean) => void;
 };
 
 const DEFAULT_CWD = process.cwd();
@@ -168,9 +169,26 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       // Install HTTP interceptor to capture actual API requests
       installHttpInterceptor(session.id);
       
+      // Extract model name from session.model (format: provider-id::model-name)
+      let modelName = session.model;
+      if (modelName?.includes('::')) {
+        modelName = modelName.split('::')[1];
+      }
+      
       // Load GUI settings with priority over default settings
       const guiSettings = loadApiSettings();
       const env = getEnhancedEnv(guiSettings);
+      
+      // Override model if specified in session
+      if (modelName) {
+        env.ANTHROPIC_MODEL = modelName;
+      }
+      
+      // Use temperature from session if provided
+      if (session.temperature !== undefined) {
+        env.ANTHROPIC_TEMPERATURE = String(session.temperature);
+        env.TEMPERATURE = String(session.temperature);
+      }
       
       // Log all parameters being sent to SDK
       const apiRequestLog = {
@@ -334,6 +352,12 @@ WRONG examples (DO NOT DO THIS):
   })();
 
   return {
-    abort: () => abortController.abort()
+    abort: () => abortController.abort(),
+    resolvePermission: (toolUseId: string, approved: boolean) => {
+      const pending = session.pendingPermissions.get(toolUseId);
+      if (pending) {
+        pending.resolve({ behavior: approved ? "allow" : "deny" });
+      }
+    }
   };
 }
