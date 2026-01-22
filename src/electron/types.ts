@@ -222,7 +222,6 @@ export type ClientEvent =
   | { type: "session.pin"; payload: { sessionId: string; isPinned: boolean } }
   | { type: "session.update-cwd"; payload: { sessionId: string; cwd: string } }
   | { type: "session.update"; payload: { sessionId: string; model?: string; temperature?: number; sendTemperature?: boolean; title?: string } }
-  | { type: "session.subscribe"; payload: { sessionId: string } }
   | { type: "session.list" }
   | { type: "session.history"; payload: { sessionId: string; threadId?: string; limit?: number; before?: number } }
   | { type: "permission.response"; payload: { sessionId: string; toolUseId: string; result: PermissionResult } }

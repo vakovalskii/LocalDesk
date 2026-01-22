@@ -317,14 +317,6 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
     return;
   }
 
-  if (event.type === "session.subscribe") {
-    const sessionId = event.payload.sessionId;
-    const session = sessions.getSession(sessionId);
-    if (!session) return;
-    sessionManager.setWindowSession(windowId, sessionId);
-    return;
-  }
-
   if (event.type === "session.start") {
     const session = sessions.createSession({
       cwd: event.payload.cwd,

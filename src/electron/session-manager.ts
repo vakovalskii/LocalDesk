@@ -1,10 +1,4 @@
 import { BrowserWindow } from "electron";
-import { sendNotification } from "./libs/notification-service.js";
-import {
-  buildNotificationBody,
-  extractResponseText,
-} from "./libs/notification-preview.js";
-import { shouldNotifyForSession } from "./libs/notification-routing.js";
 import type { ServerEvent } from "./types.js";
 
 /**
@@ -23,22 +17,6 @@ export interface SessionSubscription {
  */
 class SessionManager {
   private subscriptions = new Map<number, SessionSubscription>();
-  private latestResponses = new Map<string, string>();
-
-  private rememberLatestResponse(sessionId: string, message: unknown) {
-    const text = extractResponseText(message as any);
-    if (!text) return;
-    this.latestResponses.set(sessionId, text);
-  }
-
-  private getFocusedSessionId(): string | null {
-    const focusedWindow = BrowserWindow.getAllWindows().find((w) =>
-      w.isFocused(),
-    );
-    if (!focusedWindow) return null;
-    const sub = this.subscriptions.get(focusedWindow.id);
-    return sub?.sessionId ?? null;
-  }
 
   /**
    * Register a window and create its subscription
@@ -74,9 +52,21 @@ class SessionManager {
       sub.sessionId = sessionId;
       console.log(
         `[SessionManager] Window ${windowId} subscribed to session ${sessionId}` +
-          (oldSessionId ? ` (was: ${oldSessionId})` : ""),
+          (oldSessionId ? ` (was: ${oldSessionId})` : "")
       );
+    } else {
+      console.warn(`[SessionManager] No subscription found for window ${windowId}`);
     }
+  }
+
+  /**
+   * Get the current session ID for a window
+   * @param windowId The window ID
+   * @returns The session ID or null if not subscribed
+   */
+  getWindowSession(windowId: number): string | null {
+    const sub = this.subscriptions.get(windowId);
+    return sub?.sessionId ?? null;
   }
 
   /**
@@ -124,44 +114,9 @@ class SessionManager {
   emit(event: ServerEvent, broadcastFunc: (e: ServerEvent) => void) {
     const sessionId = this.getSessionId(event);
 
-    if (event.type === "stream.message") {
-      this.rememberLatestResponse(
-        event.payload.sessionId,
-        event.payload.message,
-      );
-    }
-
-    if (event.type === "session.deleted") {
-      this.latestResponses.delete(event.payload.sessionId);
-    }
-
     // session.status should go to ALL windows so sidebar can update
     if (event.type === "session.status") {
       this.emitToAll(event);
-
-      try {
-        const status = (event.payload as any).status;
-        const title = (event.payload as any).title || "Session";
-        const payloadSessionId = (event.payload as any).sessionId;
-
-        // Notify when session completes/errors and the focused window isn't on that session
-        if (
-          shouldNotifyForSession(
-            status,
-            payloadSessionId,
-            this.getFocusedSessionId(),
-          )
-        ) {
-          if (payloadSessionId) {
-            const body = buildNotificationBody(
-              this.latestResponses.get(payloadSessionId) || "",
-            );
-            void sendNotification(title, body, { sessionId: payloadSessionId });
-          }
-        }
-      } catch (e) {
-        // ignore notification errors
-      }
       return;
     }
 
@@ -176,7 +131,7 @@ class SessionManager {
     if (targetWindows.length === 0) {
       // No windows subscribed to this session
       console.warn(
-        `[SessionManager] No windows subscribed to session ${sessionId}, event ${event.type} not delivered`,
+        `[SessionManager] No windows subscribed to session ${sessionId}, event ${event.type} not delivered`
       );
       return;
     }
@@ -194,9 +149,7 @@ class SessionManager {
   emitToWindow(windowId: number, event: ServerEvent) {
     const sub = this.subscriptions.get(windowId);
     if (!sub) {
-      console.warn(
-        `[SessionManager] No subscription found for window ${windowId}`,
-      );
+      console.warn(`[SessionManager] No subscription found for window ${windowId}`);
       return;
     }
     sub.webContents.send("server-event", JSON.stringify(event));
@@ -209,12 +162,12 @@ class SessionManager {
   getStats() {
     const totalWindows = this.subscriptions.size;
     const subscribedWindows = Array.from(this.subscriptions.values()).filter(
-      (s) => s.sessionId !== null,
+      (s) => s.sessionId !== null
     ).length;
     const sessions = new Set(
       Array.from(this.subscriptions.values())
         .map((s) => s.sessionId)
-        .filter((id): id is string => id !== null),
+        .filter((id): id is string => id !== null)
     );
     return {
       totalWindows,

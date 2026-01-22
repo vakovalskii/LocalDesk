@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-0.0.6-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
 [![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/LocalDesk)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Community-blue.svg)](LICENSE)
 
 **Desktop AI Assistant with Local Model Support**
 
@@ -151,7 +151,10 @@ bun run dev
 }
 ```
 
-## Skills
+## 🎯 Skills Marketplace
+
+Browse and install verified skills for LocalDesk: **[Skills Marketplace](https://vakovalskii.github.io/LocalDesk-Skills/)**
+
 <img width="974" height="1123" alt="image" src="https://github.com/user-attachments/assets/8c7fa387-599d-48ab-999a-d5b9c5f811f7" />
 
 
@@ -301,7 +304,9 @@ Files:
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details
+**LocalDesk Community License** — free for individuals and companies with revenue under $1M/year. Commercial license required for larger organizations.
+
+See [LICENSE](LICENSE) for full terms.
 
 ---
 

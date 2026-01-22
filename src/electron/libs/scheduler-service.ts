@@ -1,5 +1,5 @@
-import { sendNotification } from "./notification-service.js";
-import type { SchedulerStore, ScheduledTask } from "./scheduler-store.js";
+import { Notification } from 'electron';
+import type { SchedulerStore, ScheduledTask } from './scheduler-store.js';
 
 export type SchedulerCallback = (task: ScheduledTask) => Promise<void>;
 
@@ -13,10 +13,7 @@ export class SchedulerService {
   private onTaskExecute: SchedulerCallback;
   private notifiedTasks = new Set<string>(); // Track tasks that have been notified
 
-  constructor(
-    schedulerStore: SchedulerStore,
-    onTaskExecute: SchedulerCallback,
-  ) {
+  constructor(schedulerStore: SchedulerStore, onTaskExecute: SchedulerCallback) {
     this.schedulerStore = schedulerStore;
     this.onTaskExecute = onTaskExecute;
   }
@@ -27,12 +24,12 @@ export class SchedulerService {
    */
   start() {
     if (this.intervalId) {
-      console.log("[Scheduler] Already running");
+      console.log('[Scheduler] Already running');
       return;
     }
 
-    console.log("[Scheduler] Starting scheduler service");
-
+    console.log('[Scheduler] Starting scheduler service');
+    
     // Check immediately
     this.checkTasks();
 
@@ -49,7 +46,7 @@ export class SchedulerService {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      console.log("[Scheduler] Stopped scheduler service");
+      console.log('[Scheduler] Stopped scheduler service');
     }
   }
 
@@ -58,13 +55,13 @@ export class SchedulerService {
    */
   private async checkTasks() {
     const now = Date.now();
-
+    
     // Check for tasks that need notifications
     await this.checkNotifications(now);
-
+    
     // Check for tasks due to execute
     const dueTasks = this.schedulerStore.getTasksDueNow(now);
-
+    
     if (dueTasks.length > 0) {
       console.log(`[Scheduler] Found ${dueTasks.length} due tasks`);
     }
@@ -79,17 +76,16 @@ export class SchedulerService {
    */
   private async checkNotifications(now: number) {
     const allTasks = this.schedulerStore.listTasks(false); // Only enabled tasks
-
+    
     for (const task of allTasks) {
       if (task.notifyBefore && !this.notifiedTasks.has(task.id)) {
-        const notifyTime = task.nextRun - task.notifyBefore * 60 * 1000;
-
+        const notifyTime = task.nextRun - (task.notifyBefore * 60 * 1000);
+        
         // If current time is past notify time but before execution time
         if (now >= notifyTime && now < task.nextRun) {
-          await sendNotification(
+          this.sendNotification(
             `Upcoming Task: ${task.title}`,
-            `Task will execute in ${task.notifyBefore} minutes`,
-            { taskId: task.id, event: "upcoming" },
+            `Task will execute in ${task.notifyBefore} minutes`
           );
           this.notifiedTasks.add(task.id);
         }
@@ -105,10 +101,10 @@ export class SchedulerService {
 
     try {
       // Show single reminder notification
-      await sendNotification("Reminder", task.title, {
-        taskId: task.id,
-        event: "execute",
-      });
+      this.sendNotification(
+        'Reminder',
+        task.title
+      );
 
       // Execute the task callback if there's a prompt (silently, no extra notifications)
       if (task.prompt) {
@@ -123,13 +119,9 @@ export class SchedulerService {
         const nextRun = this.calculateNextRun(task.schedule, Date.now());
         if (nextRun) {
           this.schedulerStore.updateTask(task.id, { nextRun });
-          console.log(
-            `[Scheduler] Rescheduled recurring task ${task.id} for ${new Date(nextRun).toLocaleString()}`,
-          );
+          console.log(`[Scheduler] Rescheduled recurring task ${task.id} for ${new Date(nextRun).toLocaleString()}`);
         } else {
-          console.error(
-            `[Scheduler] Failed to reschedule recurring task ${task.id}`,
-          );
+          console.error(`[Scheduler] Failed to reschedule recurring task ${task.id}`);
         }
       } else {
         // One-time task, disable it
@@ -138,10 +130,10 @@ export class SchedulerService {
       }
     } catch (error) {
       console.error(`[Scheduler] Error executing task ${task.id}:`, error);
-      await sendNotification("Error", `Failed to execute: ${task.title}`, {
-        taskId: task.id,
-        event: "error",
-      });
+      this.sendNotification(
+        'Error',
+        `Failed to execute: ${task.title}`
+      );
     }
   }
 
@@ -149,10 +141,16 @@ export class SchedulerService {
    * Send a desktop notification
    */
   private sendNotification(title: string, body: string) {
-    // Deprecated: use central notification service
-    void sendNotification(title, body).catch((err) =>
-      console.error("[Scheduler] fallback notification error", err),
-    );
+    try {
+      const notification = new Notification({
+        title,
+        body,
+        silent: false
+      });
+      notification.show();
+    } catch (error) {
+      console.error('[Scheduler] Failed to send notification:', error);
+    }
   }
 
   /**
@@ -163,14 +161,8 @@ export class SchedulerService {
     const everyMatch = schedule.match(/^every (\d+)([mhd])$/);
     if (everyMatch) {
       const [, amount, unit] = everyMatch;
-      const multiplier = {
-        m: 60 * 1000,
-        h: 60 * 60 * 1000,
-        d: 24 * 60 * 60 * 1000,
-      };
-      return (
-        from + parseInt(amount) * multiplier[unit as keyof typeof multiplier]
-      );
+      const multiplier = { m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
+      return from + parseInt(amount) * multiplier[unit as keyof typeof multiplier];
     }
 
     // Daily at specific time
@@ -179,12 +171,12 @@ export class SchedulerService {
       const [, hours, minutes] = dailyMatch;
       const target = new Date(from);
       target.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-
+      
       // If the time has passed today, schedule for tomorrow
       if (target.getTime() <= from) {
         target.setDate(target.getDate() + 1);
       }
-
+      
       return target.getTime();
     }
 
