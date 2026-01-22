@@ -12,84 +12,82 @@ import { sessionManager } from "./session-manager.js";
 import {
   sendNotification,
   setNotificationClickHandler,
-} from "./libs/notification-service.js";
-import { generateSessionTitle } from "./libs/util.js";
-import type { ClientEvent } from "./types.js";
-import "./libs/claude-settings.js";
-import { promises as fs } from "fs";
-import { join, resolve } from "path";
-
-function loadURLWithRetry(
-  win: BrowserWindow,
-  url: string,
-  {
-    maxAttempts = 60,
-    delayMs = 250,
-  }: { maxAttempts?: number; delayMs?: number } = {},
-) {
-  let attempt = 0;
-
-  const tryLoad = async () => {
-    attempt++;
-    try {
-      await win.loadURL(url);
-    } catch (err) {
-      if (attempt >= maxAttempts) {
-        console.error(
-          `[Main] Failed to load dev URL after ${attempt} attempts: ${url}`,
-          err,
-        );
-        return;
-      }
-      console.log(
-        `[Main] Dev server not ready yet. Retrying (${attempt}/${maxAttempts})...`,
-      );
-      setTimeout(tryLoad, delayMs);
-    }
-  };
-
-  void tryLoad();
-}
-
-app.on("ready", () => {
-  // Start the scheduler service
-  startScheduler();
-
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 900,
-    minWidth: 900,
-    minHeight: 700,
-    webPreferences: {
-      preload: getPreloadPath(),
-      spellcheck: true, // Enable spell checking
-    },
-    icon: getIconPath(),
-    titleBarStyle: "hiddenInset",
-    backgroundColor: "#FAF9F6",
-    trafficLightPosition: { x: 15, y: 18 },
-  });
-
-  if (isDev()) loadURLWithRetry(mainWindow, `http://localhost:${DEV_PORT}`);
-  else mainWindow.loadFile(getUIPath());
-
-  // Register window with SessionManager for event routing
-  sessionManager.registerWindow(mainWindow);
-
-  // Set spell checker languages (English and Russian)
-  mainWindow.webContents.session.setSpellCheckerLanguages(["en-US", "ru"]);
-
   // Enable context menu (right-click) with copy/paste/cut and spell check suggestions
   mainWindow.webContents.on("context-menu", (_, params) => {
     const menuTemplate: any[] = [];
 
     // Add spelling suggestions if there's a misspelled word
     if (params.misspelledWord) {
-      // Add suggestions
       params.dictionarySuggestions.slice(0, 5).forEach((suggestion) => {
         menuTemplate.push({
           label: suggestion,
           click: () => mainWindow.webContents.replaceMisspelling(suggestion),
+        });
+      });
+
+      if (params.dictionarySuggestions.length > 0) {
+        menuTemplate.push({ type: "separator" });
+      }
+
+      // Add "Add to dictionary" option
+      menuTemplate.push({
+        label: "Add to Dictionary",
+        click: () =>
+          mainWindow.webContents.session.addWordToSpellCheckerDictionary(
+            params.misspelledWord,
+          ),
+      });
+
+      menuTemplate.push({ type: "separator" });
+    }
+
+    // Standard edit menu items
+    menuTemplate.push(
+      { label: "Copy", role: "copy", enabled: params.selectionText.length > 0 },
+      {
+        label: "Cut",
+        role: "cut",
+        enabled: params.isEditable && params.selectionText.length > 0,
+      },
+      { label: "Paste", role: "paste", enabled: params.isEditable },
+      { type: "separator" },
+      { label: "Select All", role: "selectAll" },
+    );
+
+    const menu = Menu.buildFromTemplate(menuTemplate);
+    menu.popup();
+  });
+            // Sort: directories first, then files, both alphabetically
+            const sorted = files.sort((a, b) => {
+                if (a.isDirectory && !b.isDirectory) return -1;
+                if (!a.isDirectory && b.isDirectory) return 1;
+                return a.name.localeCompare(b.name);
+            });
+            
+            console.log(`[FileBrowser] Returning ${sorted.length} items`);
+            return sorted;
+        } catch (error) {
+            console.error('[FileBrowser] Failed to list directory:', error);
+            return [];
+        }
+    });
+
+    // Handle session title generation
+    ipcMainHandle("generate-session-title", async (_: any, userInput: string | null) => {
+        return await generateSessionTitle(userInput);
+    });
+
+    // Handle recent cwds request
+    ipcMainHandle("get-recent-cwds", (_: any, limit?: number) => {
+        const boundedLimit = limit ? Math.min(Math.max(limit, 1), 20) : 8;
+        return sessions.listRecentCwds(boundedLimit);
+    });
+
+    // Handle directory selection
+    ipcMainHandle("select-directory", async () => {
+        const result = await dialog.showOpenDialog(mainWindow, {
+            properties: ['openDirectory']
+>>>>>>> origin/main
         });
       });
 
