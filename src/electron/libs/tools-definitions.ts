@@ -57,8 +57,8 @@ export function getTools(settings: ApiSettings | null) {
     tools = tools.filter(tool => !FETCH_TOOLS.includes(tool.function.name));
   }
 
-  // Filter out Image tools only if explicitly disabled
-  if (settings?.enableImageTools === false) {
+  // Filter out Image tools if not enabled
+  if (!settings?.enableImageTools) {
     tools = tools.filter(tool => !IMAGE_TOOLS.includes(tool.function.name));
   }
   

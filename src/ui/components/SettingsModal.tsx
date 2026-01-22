@@ -45,7 +45,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [enableBrowserTools, setEnableBrowserTools] = useState(currentSettings?.enableBrowserTools || false);
   const [enableDuckDuckGo, setEnableDuckDuckGo] = useState(currentSettings?.enableDuckDuckGo || false);
   const [enableFetchTools, setEnableFetchTools] = useState(currentSettings?.enableFetchTools || false);
-  const [enableImageTools, setEnableImageTools] = useState(currentSettings?.enableImageTools ?? true);
+  const [enableImageTools, setEnableImageTools] = useState(currentSettings?.enableImageTools ?? false);
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [showTavilyPassword, setShowTavilyPassword] = useState(false);
   const [showZaiPassword, setShowZaiPassword] = useState(false);
@@ -103,7 +103,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableBrowserTools(currentSettings.enableBrowserTools || false);
       setEnableDuckDuckGo(currentSettings.enableDuckDuckGo || false);
       setEnableFetchTools(currentSettings.enableFetchTools || false);
-      setEnableImageTools(currentSettings.enableImageTools ?? true);
+      setEnableImageTools(currentSettings.enableImageTools ?? false);
     }
     
     // ALWAYS load LLM providers from separate file
@@ -269,7 +269,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setEnableBrowserTools(false);
     setEnableDuckDuckGo(false);
     setEnableFetchTools(false);
-    setEnableImageTools(true);
+    setEnableImageTools(false);
   };
 
   useEffect(() => {

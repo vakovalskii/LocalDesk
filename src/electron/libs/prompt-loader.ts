@@ -109,9 +109,9 @@ export function getSystemPrompt(cwd: string, settings?: PromptSettings | null): 
   const memoryLine = settings?.enableMemory || false
     ? '- `manage_memory` - Store/read long-term memory'
     : '';
-  const attachImageLine = settings?.enableImageTools === false
-    ? ''
-    : '- `attach_image` - Attach local image (converted to WebP for model input)';
+  const attachImageLine = settings?.enableImageTools
+    ? '- `attach_image` - Attach local image (converted to WebP for model input)'
+    : '';
 
   // Replace placeholders
   template = template
