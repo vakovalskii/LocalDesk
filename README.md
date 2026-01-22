@@ -32,7 +32,7 @@ https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
 | **Shell** | run_command (PowerShell/bash with directory sandboxing) |
 | **Git** | status, log, diff, branch, checkout, add, commit, push, pull, reset, show |
 | **Browser Automation** | navigate, click, type, select, hover, scroll, press_key, wait_for, snapshot, screenshot, execute_script |
-| **Web Search** | Tavily, DuckDuckGo (free, no API), Z.AI Reader |
+| **Web Search** | search_web (Tavily/DuckDuckGo), extract_page (Tavily), read_page (Z.AI) |
 | **HTTP** | fetch, fetch_json, download |
 | **Other** | execute_js, attach_image, manage_todos, manage_memory, load_skill, render_page |
 
