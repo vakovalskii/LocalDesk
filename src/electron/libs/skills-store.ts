@@ -35,7 +35,8 @@ export interface SkillsSettings {
 
 const DEFAULT_MARKETPLACE_URL = "https://api.github.com/repos/vakovalskii/LocalDesk-Skills/contents/skills";
 
-const require = createRequire(import.meta.url);
+// In bundled CJS, require is available. In ESM dev, we need createRequire.
+const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
 
 function getUserDataDir(): string {
   const envDir = process.env.LOCALDESK_USER_DATA_DIR;
@@ -56,7 +57,7 @@ function getSettingsPath(): string {
 
 export function loadSkillsSettings(): SkillsSettings {
   const filePath = getSettingsPath();
-  
+
   try {
     if (fs.existsSync(filePath)) {
       const data = fs.readFileSync(filePath, "utf-8");
@@ -70,7 +71,7 @@ export function loadSkillsSettings(): SkillsSettings {
   } catch (error) {
     console.error("[SkillsStore] Failed to load skills settings:", error);
   }
-  
+
   return {
     marketplaceUrl: DEFAULT_MARKETPLACE_URL,
     skills: []
@@ -79,7 +80,7 @@ export function loadSkillsSettings(): SkillsSettings {
 
 export function saveSkillsSettings(settings: SkillsSettings): void {
   const filePath = getSettingsPath();
-  
+
   try {
     fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), "utf-8");
     console.log("[SkillsStore] Skills settings saved");
@@ -96,7 +97,7 @@ export function getEnabledSkills(): Skill[] {
 export function toggleSkill(skillId: string, enabled: boolean): void {
   const settings = loadSkillsSettings();
   const skill = settings.skills.find(s => s.id === skillId);
-  
+
   if (skill) {
     skill.enabled = enabled;
     saveSkillsSettings(settings);
@@ -105,17 +106,17 @@ export function toggleSkill(skillId: string, enabled: boolean): void {
 
 export function updateSkillsList(skills: Skill[]): void {
   const settings = loadSkillsSettings();
-  
+
   // Preserve enabled state from existing skills
   const existingEnabled = new Map(
     settings.skills.map(s => [s.id, s.enabled])
   );
-  
+
   settings.skills = skills.map(skill => ({
     ...skill,
     enabled: existingEnabled.get(skill.id) ?? false
   }));
-  
+
   settings.lastFetched = Date.now();
   saveSkillsSettings(settings);
 }

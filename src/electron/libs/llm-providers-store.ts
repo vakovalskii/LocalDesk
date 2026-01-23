@@ -5,7 +5,8 @@ import { createRequire } from "module";
 
 const SETTINGS_FILE = "llm-providers-settings.json";
 
-const require = createRequire(import.meta.url);
+// In bundled CJS, require is available. In ESM dev, we need createRequire.
+const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
 
 function getUserDataDir(): string {
   const envDir = process.env.LOCALDESK_USER_DATA_DIR;

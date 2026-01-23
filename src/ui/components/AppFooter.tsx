@@ -12,7 +12,7 @@ export function AppFooter() {
     // Get build info from Electron main process
     getPlatform()
       .invoke('get-build-info')
-      .then(setBuildInfo)
+      .then((info) => setBuildInfo(info as any))
       .catch((error) => {
         console.error('[AppFooter] get-build-info failed', { error });
       });

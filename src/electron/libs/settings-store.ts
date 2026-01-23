@@ -1,11 +1,11 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import type { ApiSettings } from "../types.js";
+// In bundled CJS, require is available. In ESM dev, we need createRequire.
 import { createRequire } from "module";
+const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
 
 const SETTINGS_FILE = "api-settings.json";
-
-const require = createRequire(import.meta.url);
 
 function getUserDataDir(): string {
   const envDir = process.env.LOCALDESK_USER_DATA_DIR;

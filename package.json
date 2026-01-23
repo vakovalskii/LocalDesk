@@ -38,6 +38,7 @@
 		"lint": "eslint .",
 		"preview": "vite preview",
 		"transpile:sidecar": "tsc --project src/sidecar/tsconfig.json && npm run copy:sidecar-prompts",
+		"build:sidecar": "npm run copy:sidecar-prompts && npx esbuild src/sidecar/main.ts --bundle --platform=node --format=cjs --outfile=dist-sidecar/bundled.js --external:better-sqlite3 --external:sharp --external:electron --external:playwright --external:playwright-core --external:chromium-bidi && pkg dist-sidecar/bundled.js --target node18-macos-arm64 --output src-tauri/bin/local-desk-sidecar-aarch64-apple-darwin",
 		"copy:prompts": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('dist-electron/libs/prompts',{recursive:true});fs.readdirSync('src/electron/libs/prompts').filter(f=>f.endsWith('.txt')).forEach(f=>fs.copyFileSync(path.join('src/electron/libs/prompts',f),path.join('dist-electron/libs/prompts',f)))\"",
 		"copy:sidecar-prompts": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('dist-sidecar/electron/libs/prompts',{recursive:true});fs.readdirSync('src/electron/libs/prompts').filter(f=>f.endsWith('.txt')).forEach(f=>fs.copyFileSync(path.join('src/electron/libs/prompts',f),path.join('dist-sidecar/electron/libs/prompts',f)))\"",
 		"type-check": "tsc --noEmit"
@@ -90,6 +91,7 @@
 		"eslint-plugin-react-hooks": "^7.0.1",
 		"eslint-plugin-react-refresh": "^0.4.26",
 		"globals": "^17.0.0",
+		"pkg": "^5.8.1",
 		"typescript": "~5.9.3",
 		"typescript-eslint": "^8.52.0",
 		"vite": "^7.3.1"

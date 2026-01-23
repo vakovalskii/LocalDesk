@@ -264,13 +264,35 @@ fn resolve_sidecar_entry() -> Result<PathBuf, String> {
     }
   }
 
-  // Dev default: run from workspace root (LocalDesk/)
-  let candidate = PathBuf::from("dist-sidecar/sidecar/main.js");
-  if candidate.exists() {
-    return Ok(candidate);
+  #[cfg(debug_assertions)]
+  {
+    // Dev default: run from workspace root (LocalDesk/)
+    let candidate = PathBuf::from("dist-sidecar/sidecar/main.js");
+    if candidate.exists() {
+      return Ok(candidate);
+    }
+    return Err("dist-sidecar/sidecar/main.js not found. Run npm run transpile:sidecar".to_string());
   }
 
-  Err("LOCALDESK_SIDECAR_ENTRY is required (or build dist-sidecar/sidecar/main.js).".to_string())
+  #[cfg(not(debug_assertions))]
+  {
+      // Prod: Look for sidecar binary in the executables directory
+      // Name formatting: local-desk-sidecar-<target-triple>
+      // For now, we search for a file starting with local-desk-sidecar
+      let exe = std::env::current_exe().map_err(|e| format!("[sidecar] Failed to get current exe: {e}"))?;
+      let dir = exe.parent().ok_or("[sidecar] Failed to get exe parent")?;
+      
+      let entries = fs::read_dir(dir).map_err(|e| format!("[sidecar] Failed to read resource dir: {e}"))?;
+      for entry in entries {
+          if let Ok(entry) = entry {
+              let name = entry.file_name().to_string_lossy().to_string();
+              if name.starts_with("local-desk-sidecar") {
+                  return Ok(entry.path());
+              }
+          }
+      }
+      return Err(format!("[sidecar] Sidecar binary not found in {}", dir.display()));
+  }
 }
 
 fn resolve_node_bin() -> Result<String, String> {
@@ -297,14 +319,37 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
   let user_data_dir = app_data_dir()?;
   fs::create_dir_all(&user_data_dir).map_err(|error| format!("[sidecar] Failed to create user data dir: {error}"))?;
 
-  let mut child = Command::new(&node_bin)
-    .arg(entry)
+// Revert ShellExt import
+// use tauri_plugin_shell::ShellExt; 
+
+// ... inside start_sidecar
+
+  let entry = resolve_sidecar_entry()?;
+  
+  let mut child_cmd;
+  
+  #[cfg(debug_assertions)]
+  {
+     let node_bin = resolve_node_bin()?;
+     child_cmd = Command::new(&node_bin);
+     child_cmd.arg(entry);
+  }
+  
+  #[cfg(not(debug_assertions))]
+  {
+      // In prod, entry IS the binary path.
+      // We need to resolve it relative to the executable if resolve_sidecar_entry didn't already.
+      // Actually let's assume resolve_sidecar_entry handles logic.
+      child_cmd = Command::new(entry);
+  }
+
+  let mut child = child_cmd
     .env("LOCALDESK_USER_DATA_DIR", user_data_dir.to_string_lossy().to_string())
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()
-    .map_err(|error| format!("[sidecar] Failed to spawn sidecar ({node_bin}): {error}"))?;
+    .map_err(|error| format!("[sidecar] Failed to spawn sidecar: {error}"))?;
 
   let stdin = child.stdin.take().ok_or_else(|| "[sidecar] Failed to capture stdin".to_string())?;
   let stdout = child.stdout.take().ok_or_else(|| "[sidecar] Failed to capture stdout".to_string())?;
@@ -318,6 +363,7 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
       for line in reader.lines() {
         match line {
           Ok(raw) => {
+            let raw: String = raw;
             if raw.trim().is_empty() {
               continue;
             }
@@ -364,6 +410,7 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
       for line in reader.lines() {
         match line {
           Ok(raw) => {
+            let raw: String = raw;
             if raw.trim().is_empty() {
               continue;
             }

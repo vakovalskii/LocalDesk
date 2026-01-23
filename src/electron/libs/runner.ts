@@ -6,8 +6,11 @@ import { loadApiSettings } from "./settings-store.js";
 import { writeFileSync, appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-import * as https from "https";
-import * as http from "http";
+import { createRequire } from "module";
+const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
+
+const https = require("https");
+const http = require("http");
 
 
 export type RunnerOptions = {
@@ -41,10 +44,10 @@ const logApiRequest = (sessionId: string, data: any, suffix: string = '') => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `request-${sessionId}-${timestamp}${suffix}.json`;
     const filepath = join(logsDir, filename);
-    
+
     writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf8');
     console.log(`[API Log] Request saved to: ${filepath}`);
-    
+
     // Also append to main log file
     const mainLog = join(logsDir, 'requests.log');
     appendFileSync(mainLog, `\n\n=== ${timestamp}${suffix} ===\n${JSON.stringify(data, null, 2)}\n`, 'utf8');
@@ -65,14 +68,14 @@ const installHttpInterceptor = (sessionId: string) => {
   const originalHttpsRequest = https.request;
 
   // Intercept http.request
-  (http as any).request = function(...args: any[]) {
+  (http as any).request = function (...args: any[]) {
     const req = (originalHttpRequest as any).apply(this, args);
     interceptRequest(req, sessionId, 'http');
     return req;
   };
 
   // Intercept https.request
-  (https as any).request = function(...args: any[]) {
+  (https as any).request = function (...args: any[]) {
     const req = (originalHttpsRequest as any).apply(this, args);
     interceptRequest(req, sessionId, 'https');
     return req;
@@ -87,14 +90,14 @@ const interceptRequest = (req: any, sessionId: string, protocol: string) => {
   let body = '';
 
   // Capture request body
-  req.write = function(chunk: any, ...args: any[]) {
+  req.write = function (chunk: any, ...args: any[]) {
     if (chunk) {
       body += chunk.toString();
     }
     return originalWrite.apply(req, [chunk, ...args]);
   };
 
-  req.end = function(chunk: any, ...args: any[]) {
+  req.end = function (chunk: any, ...args: any[]) {
     if (chunk) {
       body += chunk.toString();
     }
@@ -103,11 +106,11 @@ const interceptRequest = (req: any, sessionId: string, protocol: string) => {
     if (body && body.length > 0) {
       try {
         const jsonBody = JSON.parse(body);
-        
+
         // Check if this is an LLM API request (has messages or prompt)
         if (jsonBody.messages || jsonBody.prompt || jsonBody.model) {
           console.log('[HTTP Interceptor] Captured API request');
-          
+
           const requestLog = {
             timestamp: new Date().toISOString(),
             protocol,
@@ -116,7 +119,7 @@ const interceptRequest = (req: any, sessionId: string, protocol: string) => {
             headers: req.getHeaders ? req.getHeaders() : {},
             body: jsonBody
           };
-          
+
           logApiRequest(sessionId, requestLog, '-http-actual');
         }
       } catch (e) {
@@ -154,7 +157,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
     }
 
     const inputObj = input as Record<string, unknown>;
-    
+
     // Check for explanation field (optional)
     if (inputObj.explanation && typeof inputObj.explanation === "string") {
       return inputObj.explanation;
@@ -168,28 +171,28 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
     try {
       // Install HTTP interceptor to capture actual API requests
       installHttpInterceptor(session.id);
-      
+
       // Extract model name from session.model (format: provider-id::model-name)
       let modelName = session.model;
       if (modelName?.includes('::')) {
         modelName = modelName.split('::')[1];
       }
-      
+
       // Load GUI settings with priority over default settings
       const guiSettings = loadApiSettings();
       const env = getEnhancedEnv(guiSettings);
-      
+
       // Override model if specified in session
       if (modelName) {
         env.ANTHROPIC_MODEL = modelName;
       }
-      
+
       // Use temperature from session if provided
       if (session.temperature !== undefined) {
         env.ANTHROPIC_TEMPERATURE = String(session.temperature);
         env.TEMPERATURE = String(session.temperature);
       }
-      
+
       // Log all parameters being sent to SDK
       const apiRequestLog = {
         timestamp: new Date().toISOString(),
@@ -209,10 +212,10 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           systemPrompt: "Using Claude Code preset + custom append for tool usage rules",
         }
       };
-      
+
       // Save to file
       logApiRequest(session.id, apiRequestLog);
-      
+
       // Console logging
       console.log(`[Agent] Starting query with prompt: ${prompt.substring(0, 100)}...`);
       console.log(`[Agent] Full prompt:`, prompt);
@@ -222,7 +225,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       console.log(`[Agent] Permission Mode: default (requires user approval)`);
       console.log(`[Agent] System Prompt: Using Claude Code preset + custom append to prevent tool hallucination`);
       console.log(`[Agent] Request log saved to: ~/.localdesk/logs/`);
-      
+
       const q = query({
         prompt,
         options: {
@@ -309,7 +312,7 @@ WRONG examples (DO NOT DO THIS):
       for await (const message of q) {
         // Debug log all messages
         console.log(`[SDK Message] Type: ${message.type}`, JSON.stringify(message).substring(0, 200));
-        
+
         // Extract session_id from system init message
         if (message.type === "system" && "subtype" in message && message.subtype === "init") {
           const sdkSessionId = message.session_id;

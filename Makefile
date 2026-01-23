@@ -1,4 +1,4 @@
-.PHONY: dev dev-sidecar dev-ui dev-tauri check-tools check-tools-base ensure-tools ensure-node-deps ensure-tauri-cli
+.PHONY: dev dev-sidecar dev-ui dev-tauri check-tools check-tools-base ensure-tools ensure-node-deps ensure-tauri-cli bundle
 
 LOCALDESK_ROOT := $(CURDIR)
 SIDECAR_ENTRY := $(LOCALDESK_ROOT)/dist-sidecar/sidecar/main.js
@@ -51,3 +51,11 @@ dev: dev-sidecar
 	kill $$VITE_PID >/dev/null 2>&1 || true; \
 	exit $$STATUS
 
+bundle: ensure-tools
+	@echo "Building UI..."
+	@npm run build
+	@echo "Building sidecar binary..."
+	@mkdir -p src-tauri/bin
+	@npm run build:sidecar
+	@echo "Building Tauri bundle..."
+	@cd src-tauri && cargo tauri build

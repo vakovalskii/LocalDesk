@@ -4,9 +4,9 @@ import type { ApiSettings } from "../types.js";
 import { join } from "path";
 import { homedir } from "os";
 import OpenAI from "openai";
-import { createRequire } from "module";
 
-const require = createRequire(import.meta.url);
+import { createRequire } from "module";
+const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
 
 function getElectronApp(): any | null {
   const electronVersion = (process.versions as any)?.electron;
@@ -50,8 +50,8 @@ export function getEnhancedEnv(guiSettings?: ApiSettings | null): Record<string,
   const settings = loadClaudeSettingsEnv(guiSettings);
 
   // Get temperature from GUI settings, default to 0.3 for vLLM
-  const temperature = guiSettings?.temperature !== undefined 
-    ? String(guiSettings.temperature) 
+  const temperature = guiSettings?.temperature !== undefined
+    ? String(guiSettings.temperature)
     : '0.3';
 
   return {
@@ -85,12 +85,12 @@ export const generateSessionTitle = async (userIntent: string | null) => {
   try {
     // Load GUI settings with priority
     const guiSettings = loadApiSettings();
-    
+
     // If no valid settings, use simple fallback
     if (!guiSettings || !guiSettings.apiKey) {
       return extractFallbackTitle(userIntent);
     }
-    
+
     // Create OpenAI client with user settings
     const client = new OpenAI({
       apiKey: guiSettings.apiKey,
@@ -130,7 +130,7 @@ Rules:
         .slice(0, 2)
         .join(' ')
         .slice(0, 30);
-      
+
       if (cleaned.length > 0) {
         return cleaned;
       }
@@ -148,24 +148,24 @@ Rules:
  */
 function extractFallbackTitle(text: string): string {
   // Remove common words and extract first meaningful words
-  const stopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 
+  const stopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
     'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through',
     'and', 'or', 'but', 'if', 'then', 'else', 'when', 'where', 'why', 'how', 'what', 'which',
     'this', 'that', 'these', 'those', 'it', 'its', 'i', 'me', 'my', 'we', 'our', 'you', 'your',
     'please', 'can', 'need', 'want', 'help', 'make', 'get', 'show', 'tell']);
-  
+
   const words = text
     .toLowerCase()
     .replace(/[^\w\sа-яё]/gi, ' ')
     .split(/\s+/)
     .filter(w => w.length > 2 && !stopWords.has(w))
     .slice(0, 2);
-  
+
   if (words.length === 0) {
     return "New Chat";
   }
-  
+
   // Capitalize first letter of each word
   return words
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))

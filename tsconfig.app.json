@@ -35,6 +35,7 @@
         "src"
     ],
     "exclude": [
-        "src/electron"
+        "src/electron",
+        "src/sidecar"
     ]
 }
