@@ -34,6 +34,11 @@ ensure-tools:
 
 dev-sidecar: ensure-tools
 	@npm run transpile:sidecar
+ifdef OS
+	@powershell -ExecutionPolicy ByPass -File ./scripts/setup_sidecar_mock.ps1
+else
+	@./scripts/setup_sidecar_mock.sh
+endif
 
 dev-ui: ensure-tools
 	@npm run dev:react
