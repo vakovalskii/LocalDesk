@@ -2,309 +2,159 @@
 
 # LocalDesk
 
-[![Version](https://img.shields.io/badge/version-0.0.6-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
-[![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/LocalDesk)
+[![Version](https://img.shields.io/badge/version-0.0.7-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/LocalDesk)
 [![License](https://img.shields.io/badge/license-Community-blue.svg)](LICENSE)
 
 **Desktop AI Assistant with Local Model Support**
+
+[Features](#-features) • [Quick Start](#-quick-start) • [Tools](#-tools) • [Skills](https://vakovalskii.github.io/LocalDesk-Skills/) • [License](#-license)
 
 </div>
 
 ---
 
-
 https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
-
 
 ## ✨ Features
 
-### Core Capabilities
-- ✅ **Task Planning** — visual todo panel with progress tracking, persisted per session
-- ✅ **OpenAI SDK** — full API control, compatible with any OpenAI-compatible endpoint
-- ✅ **Local Models** — vLLM, Ollama, LM Studio support
-- ✅ **WASM Sandbox** — secure JavaScript execution via QuickJS (no Node.js required)
-- ✅ **Document Support** — PDF and DOCX text extraction (bundled, works out of the box)
-- ✅ **Web Search** — Tavily and Z.AI integration for internet search
-- ✅ **Telegram Parsing** — render t.me channels with reactions, views, auto-scroll for older posts
-- ✅ **Security** — directory sandboxing for safe file operations
-- ✅ **Cross-platform** — Windows, macOS, Linux with proper shell commands
+### Core
+- **Multi-Provider LLM** — OpenAI, vLLM, Ollama, LM Studio, LiteLLM with auto model discovery
+- **Multi-Thread Tasks** — run N models in parallel, Consensus Mode for best answer
+- **Skills Marketplace** — [browse and install skills](https://vakovalskii.github.io/LocalDesk-Skills/) for specialized tasks
+- **WASM Sandbox** — secure JavaScript execution via QuickJS
+- **Memory System** — persistent user preferences in `~/.localdesk/memory.md`
 
-### UI/UX Features
-- ✅ **Modern Interface** — React + Electron with smooth auto-scroll and streaming
-- ✅ **Message Editing** — edit and resend messages with history truncation
-- ✅ **Session Management** — pin important sessions, search through chat history
-- ✅ **Keyboard Shortcuts** — Cmd+Enter/Ctrl+Enter to send messages
-- ✅ **Spell Check** — built-in spell checking with context menu suggestions
-- ✅ **Permission System** — ask/default modes for tool execution control
+### Tools (40+ available)
+| Category | Tools |
+|----------|-------|
+| **File Operations** | read, write, edit, search_files, search_text, read_document (PDF/DOCX) |
+| **Shell** | run_command (PowerShell/bash with directory sandboxing) |
+| **Git** | status, log, diff, branch, checkout, add, commit, push, pull, reset, show |
+| **Browser Automation** | navigate, click, type, select, hover, scroll, press_key, wait_for, snapshot, screenshot, execute_script |
+| **Web Search** | search_web (Tavily/DuckDuckGo), extract_page (Tavily), read_page (Z.AI) |
+| **HTTP** | fetch, fetch_json, download |
+| **Other** | execute_js, attach_image, manage_todos, manage_memory, load_skill, render_page |
 
-### Advanced Features
-- ✅ **Memory System** — persistent storage of user preferences in `~/.localdesk/memory.md`
-- ✅ **Token Tracking** — display input/output tokens and API duration
-- ✅ **Optimized Streaming** — requestAnimationFrame-based UI updates (60fps)
-- ✅ **Stop Streaming** — interrupt LLM responses at any time
-- ✅ **Loop Detection** — automatic detection of stuck tool call loops (5+ sequential same-tool calls)
-- ✅ **Request Timeouts** — 5-minute timeout with auto-retry for LLM requests
-- ✅ **Session Logging** — full request/response JSON logs per iteration in `~/.localdesk/logs/sessions/`
+### UI/UX
+- Modern React + Electron interface with streaming
+- Session management with pinning and search
+- Visual todo panel with progress tracking
+- Token tracking and request logging
+- Permission modes: auto-execute or ask
 
 ## 🚀 Quick Start
 
-### Installation (Windows)
-
-```powershell
-# Clone the repository
-git clone https://github.com/vakovalskii/LocalDesk.git
-cd LocalDesk
-
-# Install dependencies
-npm install
-
-# Run in development mode (single terminal)
-npm run dev:win
-```
-
-> **Notes:**
-> - First run may take 10-15 seconds while dependencies compile. Subsequent runs will be faster.
-> - **To stop:** Press `Ctrl+C` twice to fully terminate both processes (first Ctrl+C sends graceful shutdown, second forces termination).
-
-**Alternative: Manual mode (2 terminals)**
-
-Terminal 1 - Start Vite dev server:
-```powershell
-npm run dev:react
-```
-
-Terminal 2 - Start Electron (wait 5-10 seconds):
-```powershell
-npm run transpile:electron
-cross-env NODE_ENV=development npx electron .
-```
-
-**Production mode:**
-```powershell
-npm run build
-npx electron .
-```
-
-### Installation (macOS/Linux - npm)
-
 ```bash
-# Clone the repository
+# Clone and install
 git clone https://github.com/vakovalskii/LocalDesk.git
 cd LocalDesk
-
-# Install dependencies
 npm install
 
-# Rebuild native modules for Electron
+# macOS/Linux: rebuild native modules
 npx electron-rebuild -f -w better-sqlite3
 
-# Run in development mode
+# Run
 npm run dev
 ```
 
-### Installation (macOS/Linux - bun) ⚡
-
-```bash
-# Clone the repository
-git clone https://github.com/vakovalskii/LocalDesk.git
-cd LocalDesk
-
-# Install dependencies (faster)
-bun install
-
-# Rebuild native modules for Electron
-bunx electron-rebuild -f -w better-sqlite3
-
-# Run in development mode
-bun run dev
-```
-
-> **Note:** Bun is significantly faster for dependency installation (~3x speedup)
+**Windows:** use `npm run dev:win`
 
 ### Configuration
 
-1. Click **Settings** (⚙️) in the app
-2. Configure your API:
-   - **API Key** — your key (or `dummy-key` for local models)
-   - **Base URL** — API endpoint (must include `/v1`)
-   - **Model Name** — model identifier
-   - **Temperature** — 0.0-2.0 (default: 0.3)
-3. Click **Save Settings**
+Settings → LLM & Models → Add Provider:
+- **Base URL** — API endpoint (e.g., `http://localhost:8000/v1`)
+- **API Key** — your key or `dummy-key` for local models
+- Models are auto-discovered from `/v1/models`
 
-### Example Configurations
+## 🛠️ Tools
 
-**Local vLLM:**
-```json
-{
-  "apiKey": "dummy-key",
-  "baseUrl": "http://localhost:8000/v1",
-  "model": "qwen3-30b-a3b-instruct-2507"
-}
-```
+All tools use `snake_case` naming (`verb_noun` pattern). Enable/disable tool groups in Settings → Tools.
 
-**OpenAI:**
-```json
-{
-  "apiKey": "sk-...",
-  "baseUrl": "https://api.openai.com/v1",
-  "model": "gpt-4"
-}
-```
+<details>
+<summary><b>File Operations</b></summary>
 
-## 🎯 Skills Marketplace
-
-Browse and install verified skills for LocalDesk: **[Skills Marketplace](https://vakovalskii.github.io/LocalDesk-Skills/)**
-
-<img width="974" height="1123" alt="image" src="https://github.com/user-attachments/assets/8c7fa387-599d-48ab-999a-d5b9c5f811f7" />
-
-
-## 🛠️ Available Tools
-
-All tools follow `snake_case` naming convention (`verb_noun` pattern):
-
-### File Operations
 | Tool | Description |
 |------|-------------|
-| `run_command` | Execute shell commands (PowerShell/bash) |
 | `read_file` | Read text file contents |
 | `write_file` | Create new files |
 | `edit_file` | Modify files (search & replace) |
-| `search_files` | Find files by glob pattern (`*.pdf`, `src/**/*.ts`) |
-| `search_text` | Search text content in files (grep) |
-| `read_document` | Extract text from PDF/DOCX (max 10MB) |
+| `search_files` | Find files by glob pattern |
+| `search_text` | Search text in files (grep) |
+| `read_document` | Extract text from PDF/DOCX |
+</details>
 
-### Code Execution
-| Tool | Description |
-|------|-------------|
-| `execute_js` | Run JavaScript in secure WASM sandbox (QuickJS) |
-
-**execute_js** features:
-- Available globals: `fs`, `path`, `console`, `JSON`, `Math`, `Date`, `__dirname`
-- No imports needed — use globals directly
-- No TypeScript, no async/await, no npm packages
-- Use `return` statement to output results
-
-### Web Tools
-| Tool | Description |
-|------|-------------|
-| `search_web` | Search the internet (Tavily/Z.AI) |
-| `extract_page` | Extract full page content (Tavily only) |
-| `read_page` | Read web page content (Z.AI Reader) |
-| `render_page` | Render JS-heavy pages via Chromium (Telegram, SPAs) |
-
-**render_page** features:
-- Auto-converts `t.me/channel` → `t.me/s/channel` (web preview)
-- Extracts reactions, views, dates from Telegram posts
-- Auto-scrolls to load older posts (`max_posts` parameter)
-- Works with any JavaScript-rendered page
-
-### Task Management
-
-![photo_2026-01-19_00-55-13](https://github.com/user-attachments/assets/5d7c2122-9023-4e8a-be0d-e63b666cea7b)
-
+<details>
+<summary><b>Git Tools</b></summary>
 
 | Tool | Description |
 |------|-------------|
-| `manage_todos` | Create/update task plans with visual progress tracking |
+| `git_status` | Show working tree status |
+| `git_log` | Show commit history |
+| `git_diff` | Show changes |
+| `git_branch` | List/create/delete branches |
+| `git_checkout` | Switch branches |
+| `git_add` | Stage files |
+| `git_commit` | Commit changes |
+| `git_push` | Push to remote |
+| `git_pull` | Pull from remote |
+| `git_reset` | Reset changes |
+| `git_show` | Show commit details |
+</details>
 
-**manage_todos** features:
-- Actions: `create`, `update`, `clear`
-- Statuses: `pending`, `in_progress`, `completed`, `cancelled`
-- Persisted per session in SQLite database
-- Visual TodoPanel with progress bar
+<details>
+<summary><b>Browser Automation</b></summary>
 
-### Memory
 | Tool | Description |
 |------|-------------|
-| `manage_memory` | Store/read persistent user preferences |
+| `browser_navigate` | Navigate to URL |
+| `browser_click` | Click element |
+| `browser_type` | Type text |
+| `browser_select` | Select dropdown option |
+| `browser_hover` | Hover over element |
+| `browser_scroll` | Scroll page |
+| `browser_press_key` | Press keyboard key |
+| `browser_wait_for` | Wait for element/condition |
+| `browser_snapshot` | Get page accessibility tree |
+| `browser_screenshot` | Take screenshot |
+| `browser_execute_script` | Run JavaScript |
+</details>
 
-> **Security:** All file operations are sandboxed to the workspace folder only.
+<details>
+<summary><b>Web & HTTP</b></summary>
 
-## 🏗️ Project Structure
+| Tool | Description |
+|------|-------------|
+| `search_web` | Search internet (Tavily/DuckDuckGo) |
+| `search_news` | Search news (DuckDuckGo) |
+| `search_images` | Search images (DuckDuckGo) |
+| `extract_page` | Extract page content (Tavily) |
+| `read_page` | Read page (Z.AI Reader) |
+| `render_page` | Render JS-heavy pages (Telegram, SPAs) |
+| `fetch` | HTTP GET request |
+| `fetch_json` | HTTP GET returning JSON |
+| `download` | Download file |
+</details>
 
-```
-src/
-├── electron/                    # Electron main process
-│   ├── main.ts                 # Entry point
-│   ├── ipc-handlers.ts         # IPC communication
-│   └── libs/
-│       ├── runner-openai.ts    # OpenAI API runner
-│       ├── tools-executor.ts   # Tool execution logic  
-│       ├── session-store.ts    # SQLite session persistence
-│       ├── container/
-│       │   └── quickjs-sandbox.ts  # WASM sandbox
-│       ├── prompts/
-│       │   └── system.txt      # System prompt template
-│       └── tools/              # Tool definitions (snake_case)
-│           ├── bash-tool.ts        # run_command
-│           ├── read-tool.ts        # read_file
-│           ├── write-tool.ts       # write_file
-│           ├── edit-tool.ts        # edit_file
-│           ├── glob-tool.ts        # search_files
-│           ├── grep-tool.ts        # search_text
-│           ├── execute-js-tool.ts  # execute_js
-│           ├── read-document-tool.ts # read_document
-│           ├── web-search.ts       # search_web
-│           ├── extract-page-content.ts # extract_page
-│           ├── render-page-tool.ts # render_page (Telegram/SPA)
-│           ├── zai-reader.ts       # read_page
-│           ├── manage-todos-tool.ts # manage_todos
-│           └── memory-tool.ts      # manage_memory
-└── ui/                         # React frontend
-    ├── App.tsx                 # Main component
-    ├── components/
-    │   ├── TodoPanel.tsx       # Task planning UI
-    │   ├── PromptInput.tsx     # Message input
-    │   └── ...
-    └── store/
-        └── useAppStore.ts      # Zustand state management
-```
+## 🎯 Multi-Thread Tasks
 
-## 📦 Building
+Run the same task with multiple models in parallel:
 
-### Windows
-```powershell
-# Build executable and installer
-npm run dist:win
+- **Consensus Mode** — N models solve same task, auto-generates summary of best answers
+- **Different Tasks** — assign different prompts to different models
+- **Shared Web Cache** — avoid duplicate requests across threads
 
-# Output: dist/LocalDesk Setup 0.0.6.exe
-```
+## 📦 Downloads
 
-### macOS
-```bash
-# Build DMG (ARM64)
-npm run dist:mac-arm64
-
-# Build DMG (Intel x64)
-npm run dist:mac-x64
-```
-
-### Linux
-```bash
-# Build AppImage
-npm run dist:linux
-```
-
-## 🔐 Data Storage
-
-### Application Data
-- **Windows:** `C:\Users\YourName\AppData\Roaming\localdesk\`
-- **macOS:** `~/Library/Application Support/localdesk/`
-- **Linux:** `~/.config/localdesk/`
-
-Files:
-- `sessions.db` — SQLite database with chat history and todos
-- `api-settings.json` — API configuration
-
-### Global Data
-- `~/.localdesk/memory.md` — persistent memory storage
-- `~/.localdesk/logs/sessions/{session-id}/` — per-session API logs:
-  - `turn-001-request.json` — full request (model, messages, tools, temperature)
-  - `turn-001-response.json` — full response (usage, content, tool_calls)
+| Platform | Download |
+|----------|----------|
+| Windows | [LocalDesk-0.0.7.exe](https://github.com/vakovalskii/LocalDesk/releases/latest) (portable) / .msi (installer) |
+| macOS | [LocalDesk-0.0.7-arm64.dmg](https://github.com/vakovalskii/LocalDesk/releases/latest) |
+| Linux | [LocalDesk-0.0.7.AppImage](https://github.com/vakovalskii/LocalDesk/releases/latest) |
 
 ## 📄 License
 
-**LocalDesk Community License** — free for individuals and companies with revenue under $1M/year. Commercial license required for larger organizations.
+**LocalDesk Community License** — free for individuals and companies under $1M/year revenue. Commercial license required for larger organizations.
 
 See [LICENSE](LICENSE) for full terms.
 
