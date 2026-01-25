@@ -20,7 +20,10 @@ dist-sidecar/
 # Tauri / Rust build artifacts
 src-tauri/target/
 src-tauri/bin/
+target/
 *.rs.bk
+debug/
+release/
 
 # Build info (generated at build time)
 src/electron/build-info.json

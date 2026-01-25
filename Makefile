@@ -15,6 +15,8 @@ ensure-node-deps: check-tools
 	@if [ ! -d node_modules ]; then \
 		echo "level=info event=install deps=npm msg=\"node_modules not found; running npm ci\""; \
 		npm ci; \
+		echo "level=info event=rebuild module=better-sqlite3 msg=\"rebuilding native module for current Node.js\""; \
+		npm rebuild better-sqlite3; \
 	fi
 
 ensure-tauri-cli: check-tools
