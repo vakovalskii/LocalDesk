@@ -53,7 +53,7 @@ export function createTauriPlatform(): PlatformAdapter {
       });
     },
 
-    onServerEvent: (callback) => {
+    onServerEvent: (callback, onReady) => {
       let unlisten: TauriUnlisten | null = null;
       let cancelled = false;
 
@@ -80,6 +80,9 @@ export function createTauriPlatform(): PlatformAdapter {
             } catch (error) {
               console.error("[platform/tauri] Failed to unlisten (post-cancel)", { error });
             }
+          } else {
+            // Signal that listener is ready
+            onReady?.();
           }
         })
         .catch((error) => {

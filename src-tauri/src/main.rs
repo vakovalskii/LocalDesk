@@ -400,6 +400,14 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
       child_cmd = Command::new(&entry);
   }
 
+  // On Windows release builds, hide the sidecar console window
+  #[cfg(all(windows, not(debug_assertions)))]
+  {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    child_cmd.creation_flags(CREATE_NO_WINDOW);
+  }
+
   let mut child = child_cmd
     .env("LOCALDESK_USER_DATA_DIR", user_data_dir.to_string_lossy().to_string())
     .stdin(Stdio::piped())
@@ -611,13 +619,16 @@ fn open_file(path: String) -> Result<OpResult, String> {
 
 #[tauri::command]
 fn get_build_info() -> Result<BuildInfo, String> {
-  // In Electron this comes from dist-electron/build-info.json with a fallback to package.json.
-  // For Tauri MVP we return Cargo package version and mark commit/time as unknown.
+  // Version from Cargo.toml, commit info from build-time env vars (set by build.rs)
+  let commit = option_env!("GIT_COMMIT_HASH").unwrap_or("unknown");
+  let commit_short = option_env!("GIT_COMMIT_SHORT").unwrap_or(
+    if cfg!(debug_assertions) { "dev" } else { "release" }
+  );
   Ok(BuildInfo {
     version: env!("CARGO_PKG_VERSION").to_string(),
-    commit: "unknown".to_string(),
-    commit_short: "dev".to_string(),
-    build_time: "unknown".to_string(),
+    commit: commit.to_string(),
+    commit_short: commit_short.to_string(),
+    build_time: option_env!("BUILD_TIME").unwrap_or("unknown").to_string(),
   })
 }
 
@@ -1073,26 +1084,21 @@ fn client_event(app: tauri::AppHandle, state: tauri::State<'_, AppState>, event:
       send_to_sidecar(app, state.inner(), &event)
     }
 
-    // LLM Providers - handled in Rust DB (with fallback to sidecar for migration)
+    // LLM Providers - always handled in Rust DB
     "llm.providers.get" => {
       let settings = state.db.get_llm_provider_settings()
         .map_err(|e| format!("[llm.providers.get] {}", e))?;
       
       eprintln!("[llm.providers.get] providers={}, models={}", settings.providers.len(), settings.models.len());
       
-      // If DB has providers, use them
-      if !settings.providers.is_empty() {
-        let payload = json!({
-          "type": "llm.providers.loaded",
-          "payload": { "settings": settings }
-        });
-        eprintln!("[llm.providers.get] sending: {}", serde_json::to_string(&payload).unwrap_or_default());
-        emit_server_event_app(&app, &payload)?;
-        Ok(())
-      } else {
-        // No providers in DB yet - forward to sidecar (will migrate on save)
-        send_to_sidecar(app, state.inner(), &event)
-      }
+      // Always return from Rust DB (even if empty)
+      let payload = json!({
+        "type": "llm.providers.loaded",
+        "payload": { "settings": settings }
+      });
+      eprintln!("[llm.providers.get] sending: {}", serde_json::to_string(&payload).unwrap_or_default());
+      emit_server_event_app(&app, &payload)?;
+      Ok(())
     }
 
     "llm.providers.save" => {

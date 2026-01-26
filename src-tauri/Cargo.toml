@@ -1,11 +1,12 @@
 [package]
 name = "localdesk"
-version = "0.0.7"
+version = "0.0.8"
 description = "LocalDesk - Desktop AI Assistant"
 edition = "2021"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+chrono = "0.4"
 
 [dependencies]
 rfd = "0.14"
