@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useAppStore } from "../store/useAppStore";
 import type {
   PermissionResult,
   SDKAssistantMessage,
@@ -440,15 +441,29 @@ const SystemInfoCard = ({ message, showIndicator = false }: { message: SDKMessag
 const UserMessageCard = ({ 
   message, 
   showIndicator = false,
-  onEdit
+  onEdit,
+  sessionId
 }: { 
-  message: { type: "user_prompt"; prompt: string }; 
+  message: { type: "user_prompt"; prompt: string; attachments?: Array<{ path: string; name?: string; size?: number }> }; 
   showIndicator?: boolean;
   onEdit?: (newPrompt: string) => void;
+  sessionId?: string;
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState(message.prompt);
   const [copied, setCopied] = useState(false);
+  const attachments = message.attachments || [];
+  const hasPrompt = message.prompt.trim().length > 0;
+  const sessions = useAppStore((state) => state.sessions);
+  const attachmentPreviews = useAppStore((state) => state.attachmentPreviews);
+  const setAttachmentPreview = useAppStore((state) => state.setAttachmentPreview);
+  const sessionCwd = sessionId ? sessions[sessionId]?.cwd : undefined;
+
+  const getFileName = (path: string, fallback?: string) => {
+    if (fallback) return fallback;
+    const parts = path.split(/[\\/]/);
+    return parts[parts.length - 1] || path;
+  };
 
   const handleCopy = async () => {
     try {
@@ -471,6 +486,26 @@ const UserMessageCard = ({
     setEditedText(message.prompt);
     setIsEditing(false);
   };
+
+  useEffect(() => {
+    if (!sessionCwd) return;
+    const missing = attachments.filter((attachment) => attachment.path && !attachmentPreviews[attachment.path]);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const attachment of missing) {
+        try {
+          const preview = await window.electron.getImagePreview({ cwd: sessionCwd, path: attachment.path });
+          if (!cancelled && preview?.dataUrl) {
+            setAttachmentPreview(attachment.path, preview.dataUrl);
+          }
+        } catch (error) {
+          console.warn("Failed to load image preview:", error);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [attachments, attachmentPreviews, sessionCwd, setAttachmentPreview]);
 
   return (
     <div className="flex flex-col mt-4 group overflow-hidden">
@@ -503,7 +538,38 @@ const UserMessageCard = ({
         </div>
       ) : (
         <>
-          <MDContent text={message.prompt} />
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {attachments.map((attachment) => (
+                <div
+                  key={attachment.path}
+                  className="flex items-center gap-2 rounded-lg border border-ink-900/10 bg-surface-secondary px-2.5 py-1.5 text-xs text-ink-700"
+                >
+                  {attachmentPreviews[attachment.path] ? (
+                    <img
+                      src={attachmentPreviews[attachment.path]}
+                      alt={attachment.name || "attachment preview"}
+                      className="h-10 w-10 rounded-md object-cover border border-ink-900/10"
+                    />
+                  ) : (
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-surface-tertiary text-[10px] text-muted">
+                      IMG
+                    </span>
+                  )}
+                  <span className="font-medium">Image</span>
+                  <span className="truncate max-w-[240px]">{getFileName(attachment.path, attachment.name)}</span>
+                  {typeof attachment.size === "number" ? (
+                    <span className="text-muted-light">{Math.max(1, Math.round(attachment.size / 1024))} KB</span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+          {hasPrompt ? (
+            <MDContent text={message.prompt} />
+          ) : (
+            <div className="mt-2 text-sm text-ink-600">User attached image(s).</div>
+          )}
           <div className="mt-2 flex items-center gap-2 self-start">
             {onEdit && (
               <button
@@ -567,6 +633,7 @@ export function MessageCard({
     return <UserMessageCard 
       message={message} 
       showIndicator={showIndicator}
+      sessionId={sessionId}
       onEdit={onEditMessage && typeof messageIndex === 'number' 
         ? (newPrompt) => onEditMessage(messageIndex, newPrompt)
         : undefined

@@ -76,9 +76,17 @@ export interface LLMProviderSettings {
   models: LLMModel[];
 }
 
+export type ImageAttachment = {
+  path: string; // Path relative to workspace
+  name?: string;
+  mime?: string;
+  size?: number;
+};
+
 export type UserPromptMessage = {
   type: "user_prompt";
   prompt: string;
+  attachments?: ImageAttachment[];
 };
 
 export type StreamMessage = SDKMessage | UserPromptMessage;
@@ -146,7 +154,7 @@ export type MultiThreadTask = {
 // Server -> Client events
 export type ServerEvent =
   | { type: "stream.message"; payload: { sessionId: string; threadId?: string; message: StreamMessage } }
-  | { type: "stream.user_prompt"; payload: { sessionId: string; threadId?: string; prompt: string } }
+  | { type: "stream.user_prompt"; payload: { sessionId: string; threadId?: string; prompt: string; attachments?: ImageAttachment[] } }
   | { type: "session.status"; payload: { sessionId: string; threadId?: string; status: SessionStatus; title?: string; cwd?: string; error?: string; model?: string; temperature?: number } }
   | { type: "session.list"; payload: { sessions: SessionInfo[] } }
   | { type: "session.history"; payload: { sessionId: string; threadId?: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number; todos?: TodoItem[]; model?: string; fileChanges?: FileChange[]; hasMore?: boolean; nextCursor?: number; page?: "initial" | "prepend" } }
@@ -215,8 +223,8 @@ export type CreateTaskPayload = {
 
 // Client -> Server events
 export type ClientEvent =
-  | { type: "session.start"; payload: { title: string; prompt: string; cwd?: string; allowedTools?: string; model?: string; temperature?: number } }
-  | { type: "session.continue"; payload: { sessionId: string; prompt: string; retry?: boolean; retryReason?: string } }
+  | { type: "session.start"; payload: { title: string; prompt: string; cwd?: string; allowedTools?: string; model?: string; temperature?: number; attachments?: ImageAttachment[] } }
+  | { type: "session.continue"; payload: { sessionId: string; prompt: string; retry?: boolean; retryReason?: string; attachments?: ImageAttachment[] } }
   | { type: "session.stop"; payload: { sessionId: string } }
   | { type: "session.delete"; payload: { sessionId: string } }
   | { type: "session.pin"; payload: { sessionId: string; isPinned: boolean } }

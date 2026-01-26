@@ -5,7 +5,7 @@
  */
 
 import OpenAI from 'openai';
-import type { ServerEvent } from "../types.js";
+import type { ServerEvent, ImageAttachment } from "../types.js";
 import type { Session } from "./session-store.js";
 import { loadApiSettings } from "./settings-store.js";
 import { loadLLMProviderSettings } from "./llm-providers-store.js";
@@ -23,6 +23,7 @@ export type RunnerOptions = {
   prompt: string;
   session: Session;
   resumeSessionId?: string;
+  attachments?: ImageAttachment[];
   onEvent: (event: ServerEvent) => void;
   onSessionUpdate?: (updates: Partial<Session>) => void;
 };
@@ -93,7 +94,7 @@ const redactMessagesForLog = (messages: ChatMessage[]) => {
 
 
 export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
-  const { prompt, session, onEvent, onSessionUpdate } = options;
+  const { prompt, session, onEvent, onSessionUpdate, attachments } = options;
   let aborted = false;
   const abortController = new AbortController();
   const MAX_STREAM_RETRIES = 3;
@@ -314,6 +315,43 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       
       // Load memory initially
       let memoryContent = await loadMemory();
+
+      const buildImageContents = async (items?: ImageAttachment[]) => {
+        if (!items || items.length === 0) return [];
+        if (!guiSettings?.enableImageTools) {
+          console.warn("[OpenAI Runner] Image attachments ignored (enableImageTools is off).");
+          return [];
+        }
+
+        const results: Array<{ type: "image_url"; image_url: { url: string } }> = [];
+        for (const item of items) {
+          if (!item?.path) continue;
+          const result = await toolExecutor.executeTool("attach_image", {
+            explanation: "Attach pasted image",
+            file_path: item.path
+          });
+          if (result.success && result.data && (result.data as any).dataUrl) {
+            results.push({ type: "image_url", image_url: { url: (result.data as any).dataUrl } });
+          } else {
+            console.warn("[OpenAI Runner] Failed to attach image:", result.error || "unknown error");
+          }
+        }
+        return results;
+      };
+
+      const buildUserContent = async (
+        promptText: string,
+        includeMemory: boolean,
+        items?: ImageAttachment[]
+      ) => {
+        const safePrompt = promptText.trim().length > 0 ? promptText : "User attached image(s).";
+        const formattedPrompt = includeMemory
+          ? getInitialPrompt(safePrompt, memoryContent)
+          : getInitialPrompt(safePrompt);
+        const imageContents = await buildImageContents(items);
+        if (imageContents.length === 0) return formattedPrompt;
+        return [{ type: "text", text: formattedPrompt }, ...imageContents];
+      };
       
       // Get initial tools for system prompt
       const initialTools = getTools(guiSettings);
@@ -394,14 +432,16 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
               lastUserPrompt = promptText;
               
               // ALWAYS format user prompts with date (even from history)
-              const formattedPromptText = isFirstUserPrompt 
-                ? getInitialPrompt(promptText, memoryContent)
-                : getInitialPrompt(promptText);
+              const userContent = await buildUserContent(
+                promptText,
+                isFirstUserPrompt,
+                (msg as any).attachments
+              );
               isFirstUserPrompt = false;
               
               messages.push({
                 role: 'user',
-                content: formattedPromptText
+                content: userContent
               });
             } else if (msg.type === 'text') {
               // Accumulate text into assistant message
@@ -460,17 +500,16 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
         }
       }
 
-      // Add current prompt ONLY if it's different from the last one in history
-      if (prompt !== lastUserPrompt) {
+      const hasPromptAttachments = Boolean(attachments && attachments.length > 0);
+      // Add current prompt if it's different from last history entry or includes attachments
+      if (prompt !== lastUserPrompt || hasPromptAttachments) {
         // Always format prompt with current date for context
         // Add memory only if this is a new session (no history)
         const shouldAddMemory = messages.length === 1; // Only system message exists
-        const formattedPrompt = shouldAddMemory 
-          ? getInitialPrompt(prompt, memoryContent)
-          : getInitialPrompt(prompt);
+        const userContent = await buildUserContent(prompt, shouldAddMemory, attachments);
         messages.push({
           role: 'user',
-          content: formattedPrompt
+          content: userContent
         });
       }
 

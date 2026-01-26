@@ -29,6 +29,10 @@ electron.contextBridge.exposeInMainWorld("electron", {
         ipcInvoke("get-recent-cwds", limit),
     selectDirectory: () => 
         ipcInvoke("select-directory"),
+    savePastedImage: (payload: { dataUrl: string; cwd: string; fileName?: string }) =>
+        ipcInvoke("save-pasted-image", payload),
+    getImagePreview: (payload: { cwd: string; path: string; maxSize?: number }) =>
+        ipcInvoke("get-image-preview", payload),
     
     // File browser APIs
     invoke: (channel: string, ...args: any[]) => 

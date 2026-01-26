@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { query, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
-import type { ServerEvent } from "../types.js";
+import type { ServerEvent, ImageAttachment } from "../types.js";
 import type { Session } from "./session-store.js";
 import { claudeCodePath, getEnhancedEnv } from "./util.js";
 import { loadApiSettings } from "./settings-store.js";
@@ -21,6 +21,7 @@ export type RunnerOptions = {
   prompt: string;
   session: Session;
   resumeSessionId?: string;
+  attachments?: ImageAttachment[];
   onEvent: (event: ServerEvent) => void;
   onSessionUpdate?: (updates: Partial<Session>) => void;
 };
@@ -137,7 +138,10 @@ const interceptRequest = (req: any, sessionId: string, protocol: string) => {
 
 
 export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
-  const { prompt, session, resumeSessionId, onEvent, onSessionUpdate } = options;
+  const { prompt, session, resumeSessionId, onEvent, onSessionUpdate, attachments } = options;
+  if (attachments && attachments.length > 0) {
+    console.warn("[Claude Runner] Image attachments are not supported and will be ignored.");
+  }
   const abortController = new AbortController();
 
   const sendMessage = (message: SDKMessage) => {

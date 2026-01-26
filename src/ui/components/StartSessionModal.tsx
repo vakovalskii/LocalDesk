@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ApiSettings, LLMModel } from "../types";
 import { getPlatform } from "../platform";
@@ -44,6 +44,13 @@ export function StartSessionModal({
   const llmProviders = useAppStore((s) => s.llmProviders);
   const [recentCwds, setRecentCwds] = useState<string[]>([]);
   const [modelSearch, setModelSearch] = useState('');
+  const pendingAttachments = useAppStore((state) => state.pendingAttachments);
+  const attachmentPreviews = useAppStore((state) => state.attachmentPreviews);
+  const addAttachment = useAppStore((state) => state.addAttachment);
+  const removeAttachment = useAppStore((state) => state.removeAttachment);
+  const removeAttachmentPreview = useAppStore((state) => state.removeAttachmentPreview);
+  const setAttachmentPreview = useAppStore((state) => state.setAttachmentPreview);
+  const setGlobalError = useAppStore((state) => state.setGlobalError);
 
   useEffect(() => {
     getPlatform()
@@ -97,6 +104,62 @@ export function StartSessionModal({
     const result = await getPlatform().selectDirectory();
     if (result) onCwdChange(result);
   };
+
+  const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Failed to read image"));
+    reader.readAsDataURL(file);
+  });
+
+  const handlePaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItems = items.filter((item) => item.type.startsWith("image/"));
+    if (imageItems.length === 0) return;
+
+    const hasText = e.clipboardData?.types?.includes("text/plain");
+    if (!hasText) {
+      e.preventDefault();
+    }
+
+    if (!cwd || !cwd.trim()) {
+      setGlobalError("Select a workspace folder before pasting images.");
+      return;
+    }
+
+    for (const item of imageItems) {
+      const file = item.getAsFile();
+      if (!file) continue;
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        const result = await window.electron.savePastedImage({
+          dataUrl,
+          cwd,
+          fileName: file.name || undefined
+        });
+        if (result?.path) {
+          addAttachment({
+            path: result.path,
+            name: result.name || file.name || undefined,
+            mime: result.mime || file.type || undefined,
+            size: typeof result.size === "number" ? result.size : file.size
+          });
+          setAttachmentPreview(result.path, dataUrl);
+          try {
+            const preview = await window.electron.getImagePreview({ cwd, path: result.path });
+            if (preview?.dataUrl) {
+              setAttachmentPreview(result.path, preview.dataUrl);
+            }
+          } catch (previewError) {
+            console.warn("Failed to load image preview:", previewError);
+          }
+        }
+      } catch (error: any) {
+        console.error("Failed to save pasted image:", error);
+        setGlobalError(error?.message || "Failed to paste image.");
+      }
+    }
+  }, [addAttachment, cwd, setAttachmentPreview, setGlobalError]);
 
   // Find the selected model in the list to display its name instead of ID
   const displayModel = (() => {
@@ -265,12 +328,48 @@ export function StartSessionModal({
               <span className="text-xs font-medium text-muted">Initial Message</span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-ink-100 text-ink-600 font-medium">Optional</span>
             </div>
+            {pendingAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {pendingAttachments.map((attachment) => (
+                  <div
+                    key={attachment.path}
+                    className="flex items-center gap-2 rounded-lg border border-ink-900/10 bg-surface-secondary px-2.5 py-1.5 text-xs text-ink-700"
+                  >
+                    {attachmentPreviews[attachment.path] ? (
+                      <img
+                        src={attachmentPreviews[attachment.path]}
+                        alt={attachment.name || "attachment preview"}
+                        className="h-9 w-9 rounded-md object-cover border border-ink-900/10"
+                      />
+                    ) : (
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-surface-tertiary text-[10px] text-muted">
+                        IMG
+                      </span>
+                    )}
+                    <span className="font-medium">Image</span>
+                    <span className="truncate max-w-[220px]">{attachment.name || attachment.path}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        removeAttachment(attachment.path);
+                        removeAttachmentPreview(attachment.path);
+                      }}
+                      className="text-ink-400 hover:text-error transition-colors"
+                      aria-label="Remove attachment"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <textarea
               rows={4}
               className="rounded-xl border border-ink-900/10 bg-surface-secondary p-3 text-sm text-ink-800 placeholder:text-muted-light focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors resize-none"
               placeholder="Leave empty to start chatting from the main input..."
               value={prompt}
               onChange={(e) => onPromptChange(e.target.value)}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !pendingStart) {
                   e.preventDefault();

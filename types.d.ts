@@ -42,6 +42,8 @@ type EventPayloadMapping = {
     "write-memory": void;
     "get-build-info": BuildInfo;
     "open-external-url": { success: boolean; error?: string };
+    "save-pasted-image": { path: string; name: string; mime: string; size: number };
+    "get-image-preview": { dataUrl: string; mime: string };
 }
 
 interface Window {
@@ -54,6 +56,8 @@ interface Window {
         generateSessionTitle: (userInput: string | null) => Promise<string>;
         getRecentCwds: (limit?: number) => Promise<string[]>;
         selectDirectory: () => Promise<string | null>;
+        savePastedImage: (payload: { dataUrl: string; cwd: string; fileName?: string }) => Promise<{ path: string; name: string; mime: string; size: number }>;
+        getImagePreview: (payload: { cwd: string; path: string; maxSize?: number }) => Promise<{ dataUrl: string; mime: string }>;
         // File browser APIs
         invoke: (channel: string, ...args: any[]) => Promise<any>;
         send: (channel: string, ...args: any[]) => void;

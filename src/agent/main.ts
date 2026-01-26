@@ -12,8 +12,9 @@ import { sessionManager } from "./session-manager.js";
 import { generateSessionTitle } from "./libs/util.js";
 import type { ClientEvent } from "./types.js";
 import "./libs/claude-settings.js";
+import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
-import { join, resolve } from "path";
+import { basename, extname, join, normalize, relative, resolve, sep } from "path";
 
 function loadURLWithRetry(
   win: BrowserWindow,
@@ -255,6 +256,150 @@ app.on("ready", () => {
 
     return result.filePaths[0];
   });
+
+  // Save pasted image into workspace-local attachment folder
+  ipcMainHandle(
+    "save-pasted-image",
+    async (
+      _: any,
+      payload: { dataUrl: string; cwd: string; fileName?: string },
+    ) => {
+      const { dataUrl, cwd, fileName } = payload || ({} as any);
+      if (!dataUrl || !cwd) {
+        throw new Error("Missing image data or workspace folder");
+      }
+
+      const normalizedCwd = resolve(cwd);
+      if (!normalizedCwd || normalizedCwd === ".") {
+        throw new Error("Invalid workspace folder");
+      }
+
+      const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(
+        dataUrl,
+      );
+      if (!match) {
+        throw new Error("Invalid image data URL");
+      }
+
+      const mime = match[1].toLowerCase();
+      const base64 = match[2];
+      const buffer = Buffer.from(base64, "base64");
+
+      const maxBytes = 15 * 1024 * 1024;
+      if (buffer.length > maxBytes) {
+        throw new Error("Image is too large (max 15MB)");
+      }
+
+      const mimeToExt: Record<string, string> = {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/jpg": "jpg",
+        "image/webp": "webp",
+        "image/gif": "gif",
+        "image/bmp": "bmp",
+        "image/tiff": "tiff",
+        "image/heic": "heic",
+        "image/heif": "heif",
+      };
+
+      const attachmentsDir = join(normalizedCwd, ".localdesk-attachments");
+      await fs.mkdir(attachmentsDir, { recursive: true });
+
+      const baseName = fileName
+        ? basename(fileName)
+        : `pasted-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const sanitizedBase = baseName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const currentExt = extname(sanitizedBase).toLowerCase();
+      const preferredExt = mimeToExt[mime] || "png";
+
+      let finalName = sanitizedBase;
+      if (!currentExt) {
+        finalName = `${sanitizedBase}.${preferredExt}`;
+      } else if (preferredExt && currentExt !== `.${preferredExt}`) {
+        const withoutExt = sanitizedBase.slice(0, -currentExt.length);
+        finalName = `${withoutExt}.${preferredExt}`;
+      }
+
+      const fullPath = join(attachmentsDir, finalName);
+      await fs.writeFile(fullPath, buffer);
+
+      const relativePath = relative(normalizedCwd, fullPath);
+
+      return {
+        path: relativePath,
+        name: finalName,
+        mime,
+        size: buffer.length,
+      };
+    },
+  );
+
+  ipcMainHandle(
+    "get-image-preview",
+    async (_: any, payload: { cwd: string; path: string; maxSize?: number }) => {
+      const { cwd, path, maxSize } = payload || ({} as any);
+      if (!cwd || !path) {
+        throw new Error("Missing image path or workspace folder");
+      }
+
+      const normalizedCwd = normalize(resolve(cwd));
+      const fullPath = normalize(resolve(normalizedCwd, path));
+
+      const isWindows = process.platform === "win32";
+      const normalizedCwdCheck = isWindows
+        ? normalizedCwd.toLowerCase()
+        : normalizedCwd;
+      const fullPathCheck = isWindows ? fullPath.toLowerCase() : fullPath;
+      const cwdWithSep = normalizedCwdCheck.endsWith(sep)
+        ? normalizedCwdCheck
+        : normalizedCwdCheck + sep;
+
+      if (
+        !(
+          fullPathCheck === normalizedCwdCheck ||
+          fullPathCheck.startsWith(cwdWithSep)
+        )
+      ) {
+        throw new Error("Access denied: Path is outside the workspace folder");
+      }
+
+      const stats = await fs.stat(fullPath);
+      if (!stats.isFile()) {
+        throw new Error("Not a file");
+      }
+
+      const maxPixels =
+        typeof maxSize === "number" && maxSize > 0
+          ? Math.min(maxSize, 512)
+          : 320;
+
+      try {
+        const sharpModule = await import("sharp");
+        const sharp = (sharpModule as any).default ?? sharpModule;
+        const image = sharp(fullPath, { failOnError: false });
+        const resized = image.resize({
+          width: maxPixels,
+          height: maxPixels,
+          fit: "inside",
+        });
+        const webpBuffer = await resized.webp({ quality: 70 }).toBuffer();
+        return {
+          dataUrl: `data:image/webp;base64,${webpBuffer.toString("base64")}`,
+          mime: "image/webp",
+        };
+      } catch (error) {
+        const fileBuffer = await fs.readFile(fullPath);
+        if (fileBuffer.length > 2 * 1024 * 1024) {
+          throw new Error("Preview too large");
+        }
+        const ext = extname(fullPath).toLowerCase().replace(".", "") || "png";
+        return {
+          dataUrl: `data:image/${ext};base64,${fileBuffer.toString("base64")}`,
+          mime: `image/${ext}`,
+        };
+      }
+    },
+  );
 
   // Handle opening path in file manager (Finder/Explorer/etc)
   // Handle read memory

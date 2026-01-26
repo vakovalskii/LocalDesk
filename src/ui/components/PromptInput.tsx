@@ -23,15 +23,18 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
   const setSelectedModel = useAppStore((state) => state.setSelectedModel);
   const selectedTemperature = useAppStore((state) => state.selectedTemperature);
   const sendTemperature = useAppStore((state) => state.sendTemperature);
+  const pendingAttachments = useAppStore((state) => state.pendingAttachments);
+  const clearAttachments = useAppStore((state) => state.clearAttachments);
 
   const activeSession = activeSessionId ? sessions[activeSessionId] : undefined;
   const isRunning = activeSession?.status === "running";
 
   const handleSend = useCallback(async () => {
     const trimmedPrompt = prompt.trim();
+    const hasAttachments = pendingAttachments.length > 0;
 
     // For existing sessions, require a prompt
-    if (activeSessionId && !trimmedPrompt) return;
+    if (activeSessionId && !trimmedPrompt && !hasAttachments) return;
 
     if (!activeSessionId) {
       // Starting new session - can be empty for chat-only mode
@@ -51,7 +54,8 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
           cwd: cwd.trim() || undefined,
           allowedTools: DEFAULT_ALLOWED_TOOLS,
           model: selectedModel || undefined,
-          temperature: sendTemperature ? selectedTemperature : undefined
+          temperature: sendTemperature ? selectedTemperature : undefined,
+          attachments: hasAttachments ? pendingAttachments : undefined
         }
       });
       // Clear selected model after starting session
@@ -61,10 +65,11 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
         setGlobalError("Session is still running. Please wait for it to finish.");
         return;
       }
-      sendEvent({ type: "session.continue", payload: { sessionId: activeSessionId, prompt: trimmedPrompt } });
+      sendEvent({ type: "session.continue", payload: { sessionId: activeSessionId, prompt: trimmedPrompt, attachments: hasAttachments ? pendingAttachments : undefined } });
     }
     setPrompt("");
-  }, [activeSession, activeSessionId, cwd, prompt, sendEvent, setGlobalError, setPendingStart, setPrompt, selectedModel, setSelectedModel, selectedTemperature]);
+    clearAttachments();
+  }, [activeSession, activeSessionId, cwd, pendingAttachments, clearAttachments, prompt, sendEvent, setGlobalError, setPendingStart, setPrompt, selectedModel, setSelectedModel, selectedTemperature, sendTemperature]);
 
   const handleStop = useCallback(() => {
     if (!activeSessionId) return;
@@ -83,6 +88,18 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
 export function PromptInput({ sendEvent }: PromptInputProps) {
   const { prompt, setPrompt, isRunning, handleSend, handleStop } = usePromptActions(sendEvent);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const pendingAttachments = useAppStore((state) => state.pendingAttachments);
+  const attachmentPreviews = useAppStore((state) => state.attachmentPreviews);
+  const addAttachment = useAppStore((state) => state.addAttachment);
+  const removeAttachment = useAppStore((state) => state.removeAttachment);
+  const removeAttachmentPreview = useAppStore((state) => state.removeAttachmentPreview);
+  const setAttachmentPreview = useAppStore((state) => state.setAttachmentPreview);
+  const setGlobalError = useAppStore((state) => state.setGlobalError);
+  const cwd = useAppStore((state) => state.cwd);
+  const activeSessionId = useAppStore((state) => state.activeSessionId);
+  const sessions = useAppStore((state) => state.sessions);
+  const activeSession = activeSessionId ? sessions[activeSessionId] : undefined;
+  const attachmentCwd = activeSession?.cwd || cwd;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter to send (without Shift)
@@ -109,6 +126,63 @@ export function PromptInput({ sendEvent }: PromptInputProps) {
     }
   };
 
+  const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Failed to read image"));
+    reader.readAsDataURL(file);
+  });
+
+  const handlePaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItems = items.filter((item) => item.type.startsWith("image/"));
+    if (imageItems.length === 0) return;
+
+    const hasText = e.clipboardData?.types?.includes("text/plain");
+    if (!hasText) {
+      e.preventDefault();
+    }
+
+    if (!attachmentCwd || !attachmentCwd.trim()) {
+      setGlobalError("Select a workspace folder before pasting images.");
+      return;
+    }
+
+    for (const item of imageItems) {
+      const file = item.getAsFile();
+      if (!file) continue;
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        // Show preview immediately while saving to disk
+        const result = await window.electron.savePastedImage({
+          dataUrl,
+          cwd: attachmentCwd,
+          fileName: file.name || undefined
+        });
+        if (result?.path) {
+          addAttachment({
+            path: result.path,
+            name: result.name || file.name || undefined,
+            mime: result.mime || file.type || undefined,
+            size: typeof result.size === "number" ? result.size : file.size
+          });
+          setAttachmentPreview(result.path, dataUrl);
+          try {
+            const preview = await window.electron.getImagePreview({ cwd: attachmentCwd, path: result.path });
+            if (preview?.dataUrl) {
+              setAttachmentPreview(result.path, preview.dataUrl);
+            }
+          } catch (previewError) {
+            console.warn("Failed to load image preview:", previewError);
+          }
+        }
+      } catch (error: any) {
+        console.error("Failed to save pasted image:", error);
+        setGlobalError(error?.message || "Failed to paste image.");
+      }
+    }
+  }, [addAttachment, attachmentCwd, setAttachmentPreview, setGlobalError]);
+
   useEffect(() => {
     if (!promptRef.current) return;
     promptRef.current.style.height = "auto";
@@ -126,16 +200,54 @@ export function PromptInput({ sendEvent }: PromptInputProps) {
     <section className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-surface via-surface to-transparent pb-6 px-2 lg:pb-8 pt-8 lg:ml-[280px]">
       <div className="mx-auto w-full max-w-full">
         <div className="flex w-full items-end gap-3 rounded-2xl border border-ink-900/10 bg-surface px-4 py-3 shadow-card">
-          <textarea
-            rows={1}
-            className="flex-1 resize-none bg-transparent py-1.5 text-sm text-ink-800 placeholder:text-muted focus:outline-none"
-            placeholder="Describe what you want agent to handle..."
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onInput={handleInput}
-            ref={promptRef}
-          />
+          <div className="flex-1">
+            {pendingAttachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {pendingAttachments.map((attachment) => (
+                  <div
+                    key={attachment.path}
+                    className="flex items-center gap-2 rounded-lg border border-ink-900/10 bg-surface-secondary px-2.5 py-1.5 text-xs text-ink-700"
+                  >
+                    {attachmentPreviews[attachment.path] ? (
+                      <img
+                        src={attachmentPreviews[attachment.path]}
+                        alt={attachment.name || "attachment preview"}
+                        className="h-9 w-9 rounded-md object-cover border border-ink-900/10"
+                      />
+                    ) : (
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-surface-tertiary text-[10px] text-muted">
+                        IMG
+                      </span>
+                    )}
+                    <span className="font-medium">Image</span>
+                    <span className="truncate max-w-[220px]">{attachment.name || attachment.path}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        removeAttachment(attachment.path);
+                        removeAttachmentPreview(attachment.path);
+                      }}
+                      className="text-ink-400 hover:text-error transition-colors"
+                      aria-label="Remove attachment"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <textarea
+              rows={1}
+              className="w-full resize-none bg-transparent py-1.5 text-sm text-ink-800 placeholder:text-muted focus:outline-none"
+              placeholder="Describe what you want agent to handle..."
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onInput={handleInput}
+              ref={promptRef}
+            />
+          </div>
           <button
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${isRunning ? "bg-error text-white hover:bg-error/90" : "bg-accent text-white hover:bg-accent-hover"}`}
             onClick={isRunning ? handleStop : handleSend}

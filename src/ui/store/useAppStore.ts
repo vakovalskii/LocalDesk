@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, LLMModel, LLMProvider, LLMProviderSettings } from "../types";
+import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, LLMModel, LLMProvider, LLMProviderSettings, ImageAttachment } from "../types";
 import { getPlatform } from "../platform";
 
 export type PermissionRequest = {
@@ -53,6 +53,8 @@ interface AppState {
   llmProviders: LLMProvider[];
   llmModels: LLMModel[];
   llmProviderSettings: LLMProviderSettings | null;
+  pendingAttachments: ImageAttachment[];
+  attachmentPreviews: Record<string, string>;
 
   setPrompt: (prompt: string) => void;
   setCwd: (cwd: string) => void;
@@ -74,6 +76,11 @@ interface AppState {
   setLLMProviders: (providers: LLMProvider[]) => void;
   setLLMModels: (models: LLMModel[]) => void;
   setLLMProviderSettings: (settings: LLMProviderSettings) => void;
+  addAttachment: (attachment: ImageAttachment) => void;
+  removeAttachment: (path: string) => void;
+  clearAttachments: () => void;
+  setAttachmentPreview: (path: string, dataUrl: string) => void;
+  removeAttachmentPreview: (path: string) => void;
 }
 
 function createSession(id: string): SessionView {
@@ -99,6 +106,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   llmProviders: [],
   llmModels: [],
   llmProviderSettings: null,
+  pendingAttachments: [],
+  attachmentPreviews: {},
 
   setPrompt: (prompt) => set({ prompt }),
   setCwd: (cwd) => set({ cwd }),
@@ -128,6 +137,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLLMProviders: (llmProviders) => set({ llmProviders }),
   setLLMModels: (llmModels) => set({ llmModels }),
   setLLMProviderSettings: (llmProviderSettings) => set({ llmProviderSettings }),
+  addAttachment: (attachment) =>
+    set((state) => ({ pendingAttachments: [...state.pendingAttachments, attachment] })),
+  removeAttachment: (path) =>
+    set((state) => ({ pendingAttachments: state.pendingAttachments.filter((item) => item.path !== path) })),
+  clearAttachments: () => set({ pendingAttachments: [] }),
+  setAttachmentPreview: (path, dataUrl) =>
+    set((state) => ({
+      attachmentPreviews: { ...state.attachmentPreviews, [path]: dataUrl }
+    })),
+  removeAttachmentPreview: (path) =>
+    set((state) => {
+      const next = { ...state.attachmentPreviews };
+      delete next[path];
+      return { attachmentPreviews: next };
+    }),
   deleteMultiThreadTask: (taskId) => {
     set((state) => {
       const nextTasks = { ...state.multiThreadTasks };
@@ -345,7 +369,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       case "stream.user_prompt": {
-        const { sessionId, prompt } = event.payload;
+        const { sessionId, prompt, attachments } = event.payload;
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
           return {
@@ -353,7 +377,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               ...state.sessions,
               [sessionId]: {
                 ...existing,
-                messages: [...existing.messages, { type: "user_prompt", prompt }]
+                messages: [...existing.messages, { type: "user_prompt", prompt, attachments }]
               }
             }
           };
