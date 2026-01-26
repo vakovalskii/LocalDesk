@@ -1073,11 +1073,15 @@ pub struct ScheduledTask {
     pub prompt: Option<String>,
     pub schedule: String,
     pub next_run: i64,
+    #[serde(default)]
     pub is_recurring: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notify_before: Option<i64>,
+    #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default)]
     pub created_at: i64,
+    #[serde(default)]
     pub updated_at: i64,
 }
 

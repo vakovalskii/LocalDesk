@@ -1197,14 +1197,11 @@ fn client_event(app: tauri::AppHandle, state: tauri::State<'_, AppState>, event:
       let settings = state.db.get_llm_provider_settings()
         .map_err(|e| format!("[llm.providers.get] {}", e))?;
       
-      eprintln!("[llm.providers.get] providers={}, models={}", settings.providers.len(), settings.models.len());
-      
       // Always return from Rust DB (even if empty)
       let payload = json!({
         "type": "llm.providers.loaded",
         "payload": { "settings": settings }
       });
-      eprintln!("[llm.providers.get] sending: {}", serde_json::to_string(&payload).unwrap_or_default());
       emit_server_event_app(&app, &payload)?;
       Ok(())
     }
