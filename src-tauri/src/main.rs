@@ -400,6 +400,14 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
       child_cmd = Command::new(&entry);
   }
 
+  // On Windows release builds, hide the sidecar console window
+  #[cfg(all(windows, not(debug_assertions)))]
+  {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    child_cmd.creation_flags(CREATE_NO_WINDOW);
+  }
+
   let mut child = child_cmd
     .env("LOCALDESK_USER_DATA_DIR", user_data_dir.to_string_lossy().to_string())
     .stdin(Stdio::piped())
