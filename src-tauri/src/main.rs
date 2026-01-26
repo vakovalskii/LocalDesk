@@ -619,13 +619,16 @@ fn open_file(path: String) -> Result<OpResult, String> {
 
 #[tauri::command]
 fn get_build_info() -> Result<BuildInfo, String> {
-  // In Electron this comes from dist-electron/build-info.json with a fallback to package.json.
-  // For Tauri MVP we return Cargo package version and mark commit/time as unknown.
+  // Version from Cargo.toml, commit info from build-time env vars (set by build.rs)
+  let commit = option_env!("GIT_COMMIT_HASH").unwrap_or("unknown");
+  let commit_short = option_env!("GIT_COMMIT_SHORT").unwrap_or(
+    if cfg!(debug_assertions) { "dev" } else { "release" }
+  );
   Ok(BuildInfo {
     version: env!("CARGO_PKG_VERSION").to_string(),
-    commit: "unknown".to_string(),
-    commit_short: "dev".to_string(),
-    build_time: "unknown".to_string(),
+    commit: commit.to_string(),
+    commit_short: commit_short.to_string(),
+    build_time: option_env!("BUILD_TIME").unwrap_or("unknown").to_string(),
   })
 }
 
