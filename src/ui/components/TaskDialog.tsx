@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ApiSettings, CreateTaskPayload, TaskMode, ThreadTask, ModelInfo, LLMModel } from "../types";
 import { getPlatform } from "../platform";
+import { useAppStore } from "../store/useAppStore";
 
 // Helper function to generate task title automatically (max 3 words)
 function generateTaskTitle(
@@ -52,6 +53,7 @@ export function TaskDialog({
   availableModels,
   llmModels = []
 }: TaskDialogProps) {
+  const llmProviders = useAppStore((s) => s.llmProviders);
   const [mode, setMode] = useState<TaskMode>("consensus");
   const [shareWebCache, setShareWebCache] = useState(true);
   const [localCwd, setLocalCwd] = useState(cwd);
@@ -87,11 +89,16 @@ export function TaskDialog({
   const allAvailableModels = (() => {
     const enabledLlmModels = llmModels.filter(m => m.enabled);
     if (enabledLlmModels.length > 0) {
-      return enabledLlmModels.map(model => ({
-        id: model.id,
-        name: model.name,
-        description: `${model.providerType} | ${model.description || ''}`
-      }));
+      return enabledLlmModels.map(model => {
+        // Find provider name by providerId
+        const provider = llmProviders.find(p => p.id === model.providerId);
+        const providerLabel = provider?.name || model.providerType;
+        return {
+          id: model.id,
+          name: model.name,
+          description: `${providerLabel} | ${model.description || ''}`
+        };
+      });
     }
 
     return availableModels.map(model => ({

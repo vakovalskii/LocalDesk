@@ -37,7 +37,7 @@ print(f"Found {len(files)} files")
 
 **IF IMPORT FAILS**: Package not installed. Use bash tool to run: pip install <package>
 
-**LIMITATIONS**:
+**LIMITATIONS**: 
 - Requires Python 3 on user's system
 - pip packages must be pre-installed (or use bash to install)
 - Code runs in workspace directory`,
