@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { 
   ApiSettings, 
@@ -21,7 +21,7 @@ type SettingsModalProps = {
   currentSettings: ApiSettings | null;
 };
 
-type TabId = 'llm-models' | 'web-tools' | 'tools' | 'skills' | 'memory-mode';
+type TabId = 'llm-models' | 'voice' | 'web-tools' | 'tools' | 'skills' | 'memory-mode';
 
 export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('llm-models');
@@ -54,6 +54,21 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [showTavilyPassword, setShowTavilyPassword] = useState(false);
   const [showZaiPassword, setShowZaiPassword] = useState(false);
 
+  // Voice settings state (stored inside ApiSettings.voiceSettings)
+  const [voiceBaseUrl, setVoiceBaseUrl] = useState(currentSettings?.voiceSettings?.baseUrl || "");
+  const [voiceApiKey, setVoiceApiKey] = useState(currentSettings?.voiceSettings?.apiKey || "");
+  const [voiceModel, setVoiceModel] = useState(currentSettings?.voiceSettings?.model || "");
+  const [voiceLanguage, setVoiceLanguage] = useState(currentSettings?.voiceSettings?.language || "");
+  const voiceServerStatus = useAppStore((s) => s.voiceServerStatus);
+  const [voiceChecking, setVoiceChecking] = useState(false);
+  const [voiceModels, setVoiceModels] = useState<string[]>([]);
+  const [voiceModelsLoading, setVoiceModelsLoading] = useState(false);
+  const [voiceModelsError, setVoiceModelsError] = useState<string | null>(null);
+  const filteredVoiceModels = useMemo(() => {
+    const filters = [/whisper/i, /transcribe/i, /speech/i, /stt/i];
+    return voiceModels.filter((m) => filters.some((re) => re.test(m)));
+  }, [voiceModels]);
+
   // LLM Provider settings - get from global store
   const globalLlmProviders = useAppStore((s) => s.llmProviders);
   const globalLlmModels = useAppStore((s) => s.llmModels);
@@ -66,15 +81,11 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   
   // Sync local state when global store updates
   useEffect(() => {
-    if (globalLlmProviders.length > 0) {
-      setLlmProviders(globalLlmProviders);
-    }
+    setLlmProviders(globalLlmProviders);
   }, [globalLlmProviders]);
   
   useEffect(() => {
-    if (globalLlmModels.length > 0) {
-      setLlmModels(globalLlmModels);
-    }
+    setLlmModels(globalLlmModels);
   }, [globalLlmModels]);
 
   // Skills state
@@ -93,7 +104,6 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setMemoryLoaded(true);
       setMemoryDirty(false);
     } catch (error) {
-      console.error('Failed to load memory:', error);
       setMemoryContent("");
       setMemoryLoaded(false);
       setMemoryError(error instanceof Error ? error.message : String(error));
@@ -106,7 +116,6 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     try {
       await getPlatform().invoke('write-memory', memoryContent);
     } catch (error) {
-      console.error('Failed to save memory:', error);
       setMemoryError(error instanceof Error ? error.message : String(error));
     }
   };
@@ -132,10 +141,13 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableDuckDuckGo(currentSettings.enableDuckDuckGo || false);
       setEnableFetchTools(currentSettings.enableFetchTools || false);
       setEnableImageTools(currentSettings.enableImageTools ?? false);
+
+      setVoiceBaseUrl(currentSettings.voiceSettings?.baseUrl || "");
+      setVoiceApiKey(currentSettings.voiceSettings?.apiKey || "");
+      setVoiceModel(currentSettings.voiceSettings?.model || "");
+      setVoiceLanguage(currentSettings.voiceSettings?.language || "");
     }
     
-    // ALWAYS load LLM providers from separate file
-    console.log('[SettingsModal] Loading LLM providers from file...');
     loadLlmProviders();
     
     // Load memory content if memory is enabled
@@ -143,6 +155,88 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       loadMemoryContent();
     }
   }, [currentSettings, loadMemoryContent]);
+
+  // Fetch available voice models when base URL changes
+  useEffect(() => {
+    const base = voiceBaseUrl.trim();
+    if (!base) {
+      setVoiceModels([]);
+      setVoiceModelsError(null);
+      setVoiceModelsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setVoiceModelsLoading(true);
+        setVoiceModelsError(null);
+        const models = await getPlatform().invoke<string[]>("voice-models", base, voiceApiKey.trim() || undefined);
+        if (cancelled) return;
+        setVoiceModels(models);
+      } catch (error: any) {
+        if (cancelled) return;
+        setVoiceModels([]);
+        setVoiceModelsError(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (!cancelled) setVoiceModelsLoading(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [voiceBaseUrl, voiceApiKey]);
+
+  // Debounced voice server check on changes
+  useEffect(() => {
+    if (!voiceBaseUrl.trim()) {
+      setVoiceChecking(false);
+      return;
+    }
+    setVoiceChecking(true);
+    const timer = setTimeout(() => {
+      const payload = {
+        baseUrl: voiceBaseUrl.trim(),
+        apiKey: voiceApiKey.trim() || undefined,
+        model: voiceModel.trim(),
+        language: voiceLanguage.trim() || undefined,
+      };
+
+      getPlatform().sendClientEvent({
+        type: "voice.check",
+        payload
+      });
+
+      // Proactively warm up the model so first transcription doesn't time out.
+      // Only if model is provided (empty model means "use server default").
+      if (payload.model.trim()) {
+        getPlatform().sendClientEvent({
+          type: "voice.preload",
+          payload: {
+            baseUrl: payload.baseUrl,
+            apiKey: payload.apiKey,
+            model: payload.model
+          }
+        });
+      }
+    }, 400);
+
+    // Fail-safe: don't keep spinner forever if status doesn't update for any reason
+    const maxTimer = setTimeout(() => setVoiceChecking(false), 6000);
+
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(maxTimer);
+    };
+  }, [voiceApiKey, voiceBaseUrl, voiceLanguage, voiceModel]);
+
+  // Stop "checking" when status arrives
+  useEffect(() => {
+    if (!voiceChecking) return;
+    setVoiceChecking(false);
+  }, [voiceServerStatus.checkedAt]);
 
   // Avoid overwriting memory.md with an empty string unless the user edited it.
   const setMemoryContentUser = useCallback((value: string) => {
@@ -176,7 +270,12 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     const unsubscribe = getPlatform().onServerEvent((event) => {
       if (event.type === "llm.models.fetched") {
         const { models } = event.payload;
-        setLlmModels(models);
+        const providerType = llmProviders.find((p) => p.id === providerId)?.type;
+        const normalizedModels = models.map((model) => ({
+          ...model,
+          providerType: model.providerType ?? providerType ?? 'openai'
+        }));
+        setLlmModels(normalizedModels);
         setLlmLoading(false);
         unsubscribe();
         loadLlmProviders(); // Reload to get updated settings
@@ -267,13 +366,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       providers: llmProviders,
       models: llmModels
     };
-    
-    console.log('[SettingsModal] Saving settings...');
-    console.log('[SettingsModal] Providers count:', llmProviders.length);
-    console.log('[SettingsModal] Models count:', llmModels.length);
-    console.log('[SettingsModal] Providers:', llmProviders);
-    console.log('[SettingsModal] Models:', llmModels);
-    
+
     const settingsToSave = {
       apiKey: apiKey.trim(),
       baseUrl: baseUrl.trim(),
@@ -293,16 +386,21 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       enableDuckDuckGo,
       enableFetchTools,
       enableImageTools,
-      llmProviders: llmProviderSettings
+      llmProviders: llmProviderSettings,
+      voiceSettings: voiceBaseUrl.trim()
+        ? {
+            baseUrl: voiceBaseUrl.trim(),
+            apiKey: voiceApiKey.trim() || undefined,
+            model: voiceModel.trim(),
+            language: voiceLanguage.trim() || undefined
+          }
+        : undefined
     };
-    
-    console.log('[SettingsModal] Full settings to save:', settingsToSave);
     
     // Save API settings
     onSave(settingsToSave);
     
     // Also save LLM providers separately
-    console.log('[SettingsModal] Saving LLM providers separately...');
     getPlatform().sendClientEvent({
       type: "llm.providers.save",
       payload: { settings: llmProviderSettings }
@@ -368,6 +466,16 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
               LLM & Models
             </button>
             <button
+              onClick={() => setActiveTab('voice')}
+              className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'voice'
+                  ? 'text-ink-900 border-b-2 border-accent'
+                  : 'text-ink-600 hover:text-ink-900'
+              }`}
+            >
+              Voice
+            </button>
+            <button
               onClick={() => setActiveTab('web-tools')}
               className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'web-tools'
@@ -423,6 +531,23 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                 onReloadProviders={loadLlmProviders}
                 setLlmProviders={setLlmProviders}
                 setLlmModels={setLlmModels}
+              />
+            ) : activeTab === 'voice' ? (
+              <VoiceTab
+                voiceBaseUrl={voiceBaseUrl}
+                setVoiceBaseUrl={setVoiceBaseUrl}
+                voiceApiKey={voiceApiKey}
+                setVoiceApiKey={setVoiceApiKey}
+                voiceModel={voiceModel}
+                setVoiceModel={setVoiceModel}
+                voiceLanguage={voiceLanguage}
+                setVoiceLanguage={setVoiceLanguage}
+                status={voiceServerStatus}
+                checking={voiceChecking}
+                voiceModels={filteredVoiceModels}
+                voiceModelsTotal={voiceModels.length}
+                voiceModelsLoading={voiceModelsLoading}
+                voiceModelsError={voiceModelsError}
               />
             ) : activeTab === 'web-tools' ? (
               <WebToolsTab
@@ -509,6 +634,142 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function VoiceTab({
+  voiceBaseUrl,
+  setVoiceBaseUrl,
+  voiceApiKey,
+  setVoiceApiKey,
+  voiceModel,
+  setVoiceModel,
+  voiceLanguage,
+  setVoiceLanguage,
+  status,
+  checking,
+  voiceModels,
+  voiceModelsTotal,
+  voiceModelsLoading,
+  voiceModelsError
+}: {
+  voiceBaseUrl: string;
+  setVoiceBaseUrl: (v: string) => void;
+  voiceApiKey: string;
+  setVoiceApiKey: (v: string) => void;
+  voiceModel: string;
+  setVoiceModel: (v: string) => void;
+  voiceLanguage: string;
+  setVoiceLanguage: (v: string) => void;
+  status: { available: boolean; error?: string; checkedAt?: number };
+  checking: boolean;
+  voiceModels: string[];
+  voiceModelsTotal: number;
+  voiceModelsLoading: boolean;
+  voiceModelsError: string | null;
+}) {
+  const showStatus = voiceBaseUrl.trim().length > 0;
+
+  return (
+    <div className="px-6 py-4 space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-2">Voice Base URL</label>
+        <input
+          type="text"
+          value={voiceBaseUrl}
+          onChange={(e) => setVoiceBaseUrl(e.target.value)}
+          placeholder="http://localhost:8000/v1"
+          className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+        />
+        <p className="mt-1 text-xs text-ink-500">
+          OpenAI-compatible endpoint (usually ends with `/v1`).
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-2">Voice API Key (optional)</label>
+        <input
+          type="password"
+          value={voiceApiKey}
+          onChange={(e) => setVoiceApiKey(e.target.value)}
+          placeholder="sk-... (optional)"
+          className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-ink-700 mb-2">Model</label>
+          <select
+            value={voiceModels.includes(voiceModel) ? voiceModel : ""}
+            onChange={(e) => {
+              const next = e.target.value.trim();
+              if (next) setVoiceModel(next);
+            }}
+            className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+          >
+            <option value="">Custom...</option>
+            {voiceModels.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <div className="mt-1 text-xs text-ink-500 flex items-center gap-2">
+            {voiceModelsLoading ? (
+              <span>Loading models…</span>
+            ) : voiceModelsError ? (
+              <span className="text-red-600">Models: {voiceModelsError}</span>
+            ) : voiceModelsTotal > 0 && voiceModels.length === 0 ? (
+              <span>No STT models matched filters</span>
+            ) : voiceModels.length > 0 ? (
+              <span>{voiceModels.length} STT models found</span>
+            ) : (
+              <span>Models list not available</span>
+            )}
+          </div>
+          <input
+            type="text"
+            value={voiceModel}
+            onChange={(e) => setVoiceModel(e.target.value)}
+            placeholder="Systran/faster-whisper-large-v3"
+            className="mt-2 w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-ink-700 mb-2">Language (optional)</label>
+          <input
+            type="text"
+            value={voiceLanguage}
+            onChange={(e) => setVoiceLanguage(e.target.value)}
+            placeholder="en / fr / ..."
+            className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+          />
+        </div>
+      </div>
+
+      {showStatus && (
+        <div className="flex items-center gap-2 text-sm">
+          {checking ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse" />
+              <span className="text-ink-500">Checking connection...</span>
+            </>
+          ) : status.available ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-green-700">Connected</span>
+            </>
+          ) : (
+            <>
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-red-700">Unavailable</span>
+              {status.error && <span className="text-xs text-red-600 ml-2">({status.error})</span>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -892,21 +1153,15 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
       enabled: true,
     };
 
-    console.log('[AddProvider] Creating new provider:', newProvider);
-    console.log('[AddProvider] Available models count:', availableModels.length);
-
     // Prepare models with correct provider ID
     const newModels = availableModels.length > 0 
       ? availableModels.map(m => ({ 
           ...m, 
-          providerId: newProvider.id, 
+          providerId: newProvider.id,
+          providerType: newProvider.type,
           id: `${newProvider.id}::${m.id.split('::')[1] || m.id}` 
         })) 
       : [];
-
-    console.log('[AddProvider] Prepared models count:', newModels.length);
-    console.log('[AddProvider] Current providers:', providers);
-    console.log('[AddProvider] Current models:', models);
 
     // Save to settings
     const updatedSettings = {
@@ -914,14 +1169,9 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
       models: [...models, ...newModels]
     };
 
-    console.log('[AddProvider] Updated settings to send:', updatedSettings);
-
     // Immediately update local state
     setLlmProviders([...providers, newProvider]);
     setLlmModels([...models, ...newModels]);
-
-    console.log('[AddProvider] Local state updated');
-    console.log('[AddProvider] Sending llm.providers.save event...');
 
     getPlatform().sendClientEvent({
       type: "llm.providers.save",

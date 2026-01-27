@@ -48,9 +48,7 @@ export function createTauriPlatform(): PlatformAdapter {
 
   return {
     sendClientEvent: (event) => {
-      void tauriInvoke("client_event", { event }).catch((error) => {
-        console.error("[platform/tauri] sendClientEvent failed", { error, eventType: (event as any)?.type });
-      });
+      void tauriInvoke("client_event", { event }).catch(() => {});
     },
 
     onServerEvent: (callback, onReady) => {
@@ -62,14 +60,11 @@ export function createTauriPlatform(): PlatformAdapter {
           const payload = (event as any)?.payload;
           if (typeof payload === "string") {
             const parsed = JSON.parse(payload);
-            console.log("[platform/tauri] Received server-event:", parsed.type);
             callback(parsed);
             return;
           }
-          console.log("[platform/tauri] Received server-event (obj):", (payload as any)?.type);
           callback(payload as any);
-        } catch (error) {
-          console.error("[platform/tauri] Failed to handle server-event payload", { error, payload: (event as any)?.payload });
+        } catch {
         }
       })
         .then((fn) => {
@@ -77,25 +72,21 @@ export function createTauriPlatform(): PlatformAdapter {
           if (cancelled) {
             try {
               unlisten();
-            } catch (error) {
-              console.error("[platform/tauri] Failed to unlisten (post-cancel)", { error });
+            } catch {
             }
           } else {
             // Signal that listener is ready
             onReady?.();
           }
         })
-        .catch((error) => {
-          console.error("[platform/tauri] Failed to listen to server-event", { error });
-        });
+        .catch(() => {});
 
       return () => {
         cancelled = true;
         if (!unlisten) return;
         try {
           unlisten();
-        } catch (error) {
-          console.error("[platform/tauri] Failed to unlisten", { error });
+        } catch {
         }
       };
     },
@@ -109,6 +100,31 @@ export function createTauriPlatform(): PlatformAdapter {
         case "list-directory": {
           const path = String(args[0] ?? "");
           return tauriInvoke("list_directory", { path });
+        }
+        case "transcribe-voice-stream": {
+          const audioChunkB64 = String(args[0] ?? "");
+          const audioMime = String(args[1] ?? "");
+          const sessionId = String(args[2] ?? "");
+          const baseUrl = String(args[3] ?? "");
+          const apiKey = args[4] as string | undefined;
+          const model = String(args[5] ?? "whisper-1");
+          const language = args[6] as string | undefined;
+          const isFinal = Boolean(args[7] ?? false);
+          return tauriInvoke("transcribe_voice_stream", {
+            audioChunkB64,
+            audioMime,
+            sessionId,
+            baseUrl,
+            apiKey,
+            model,
+            language,
+            isFinal
+          });
+        }
+        case "voice-models": {
+          const baseUrl = String(args[0] ?? "");
+          const apiKey = args[1] as string | undefined;
+          return tauriInvoke("list_voice_models", { baseUrl, apiKey });
         }
         case "read-memory": {
           return tauriInvoke("read_memory");
@@ -139,9 +155,7 @@ export function createTauriPlatform(): PlatformAdapter {
       switch (channel) {
         case "open-file": {
           const path = String(args[0] ?? "");
-          void tauriInvoke("open_file", { path }).catch((error) => {
-            console.error("[platform/tauri] open_file failed", { error, path });
-          });
+          void tauriInvoke("open_file", { path }).catch(() => {});
           return;
         }
         default: {

@@ -28,7 +28,6 @@ function App() {
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [showSessionEditModal, setShowSessionEditModal] = useState(false);
-  const [apiSettings, setApiSettings] = useState<ApiSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings have been loaded from backend
   const [llmProvidersLoaded, setLlmProvidersLoaded] = useState(false); // Track if LLM providers have been loaded
   const partialUpdateScheduledRef = useRef(false);
@@ -40,6 +39,8 @@ function App() {
   const setSendTemperature = useAppStore((s) => s.setSendTemperature);
   const availableModels = useAppStore((s) => s.availableModels);
   const llmModels = useAppStore((s) => s.llmModels);
+  const apiSettings = useAppStore((s) => s.apiSettings);
+  const setApiSettings = useAppStore((s) => s.setApiSettings);
 
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -66,8 +67,7 @@ function App() {
     try {
       const realType = eventMessage.delta.type.split("_")[0];
       return eventMessage.delta[realType];
-    } catch (error) {
-      console.error(error);
+    } catch {
       return "";
     }
   };
@@ -118,7 +118,6 @@ function App() {
     
     // Handle settings loaded event
     if (event.type === "settings.loaded") {
-      setApiSettings(event.payload.settings);
       setSettingsLoaded(true);
     }
     
@@ -155,13 +154,11 @@ function App() {
     
     // If we have enabled models from LLM providers, we're good - don't open Settings
     if (hasEnabledModels) {
-      console.log('[App] LLM providers with enabled models found:', llmModels.length, 'models');
       return;
     }
     
     // No LLM models - check legacy API settings
     if (apiSettings === null) {
-      console.log('[App] No settings or LLM providers found, opening Settings modal');
       setShowStartModal(false);
       setShowSettingsModal(true);
       return;
@@ -174,11 +171,9 @@ function App() {
                           apiSettings.apiKey !== 'undefined';
     
     if (!hasValidApiKey) {
-      console.log('[App] No valid API key or enabled LLM models found, opening Settings modal');
       setShowStartModal(false);
       setShowSettingsModal(true);
     } else {
-      console.log('[App] Valid API key found');
     }
   }, [apiSettings, settingsLoaded, llmProvidersLoaded, llmModels, setShowStartModal]);
 
@@ -233,7 +228,6 @@ function App() {
   useEffect(() => {
     // Only scroll if we actually added a new message (not just updated existing ones)
     if (messages.length > prevMessagesLengthRef.current) {
-      console.log('[AutoScroll] New message detected, autoScrollEnabled:', autoScrollEnabled, 'isUserScrolledUp:', isUserScrolledUpRef.current);
       if (autoScrollEnabled && !isUserScrolledUpRef.current) {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }
@@ -419,9 +413,7 @@ function App() {
                     if (result && activeSessionId) {
                       sendEvent({ type: "session.update-cwd", payload: { sessionId: activeSessionId, cwd: result } });
                     }
-                  } catch (error) {
-                    console.error("[App] selectDirectory failed", { error });
-                  }
+                  } catch {}
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-accent/10 border border-accent/30 text-accent rounded-lg hover:bg-accent/20 transition-colors"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -452,9 +444,7 @@ function App() {
                 </button>
                 <button
                   onClick={() => {
-                    void getPlatform()
-                      .invoke('open-path-in-finder', activeSession.cwd)
-                      .catch((error) => console.error('[App] open-path-in-finder failed', { error, path: activeSession.cwd }));
+                    void getPlatform().invoke('open-path-in-finder', activeSession.cwd).catch(() => {});
                   }}
                   className="flex items-center justify-center w-8 h-8 text-ink-600 bg-white border border-l-0 border-ink-900/10 rounded-r-lg hover:bg-ink-50 hover:text-ink-900 transition-colors"
                   style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -468,6 +458,7 @@ function App() {
             )}
             <button
               onClick={() => {
+                if (!apiSettings) return;
                 const newMode = apiSettings?.permissionMode === 'ask' ? 'default' : 'ask';
                 const newSettings = { ...apiSettings, permissionMode: newMode } as ApiSettings;
                 sendEvent({ type: 'settings.save', payload: { settings: newSettings } });
