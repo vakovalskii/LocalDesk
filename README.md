@@ -1,6 +1,6 @@
 <div align="center">
 
-# LocalDesk
+# VALERA - Very Almost Local, Eventually Reasonable Assistant
 
 [![Version](https://img.shields.io/badge/version-0.0.8-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
 [![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/LocalDesk)
@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
 - ✅ **Permission System** — ask/default modes for tool execution control
 
 ### Advanced Features
-- ✅ **Memory System** — persistent storage of user preferences in `~/.localdesk/memory.md`
+- ✅ **Memory System** — persistent storage of user preferences in `~/./memory.md`
 - ✅ **Token Tracking** — display input/output tokens and API duration
 - ✅ **Optimized Streaming** — requestAnimationFrame-based UI updates (60fps)
 - ✅ **Stop Streaming** — interrupt LLM responses at any time
