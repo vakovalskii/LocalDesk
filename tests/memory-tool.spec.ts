@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm } from "fs/promises";
 import { join } from "path";
@@ -5,6 +8,7 @@ import { tmpdir } from "os";
 
 let tempHome = "";
 
+// Мокаем только homedir функцию, не весь модуль
 vi.mock("os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("os")>();
   return {

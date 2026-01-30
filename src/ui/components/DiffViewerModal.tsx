@@ -145,9 +145,16 @@ export function DiffViewerModal({ file, files = [], cwd, open, onClose, onFileCh
           newContentValue = await getPlatform().invoke<string>("get-file-new-content", file.file_path, cwd);
           console.log(`[DiffViewer] New content length: ${newContentValue.length} for ${file.file_path}`);
         } catch (err) {
-          // If file doesn't exist on disk, it's a new file
-          console.error(`[DiffViewer] File ${file.file_path} not found on disk, treating as new file:`, err);
-          newContentValue = "";
+          // Check if it's a "file not found" error (new file) or a real error
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          if (errorMessage.includes("not found") || errorMessage.includes("ENOENT")) {
+            // If file doesn't exist on disk, it's a new file - this is OK
+            console.error(`[DiffViewer] File ${file.file_path} not found on disk, treating as new file:`, err);
+            newContentValue = "";
+          } else {
+            // Real error (permission denied, etc.) - throw to be caught by outer catch
+            throw err;
+          }
         }
 
         setOldContent(oldContentValue);
